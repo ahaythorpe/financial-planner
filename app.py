@@ -458,13 +458,21 @@ with t_scen:
 
     with col2:
         fig,ax=plt.subplots(figsize=(4,3.5))
-        bars=ax.bar(lbs,net_v,color=colors[:len(lbs)],width=.5,zorder=3)
-        ax.axhline(0,color="#bbb",linewidth=.8,linestyle="--")
+        bar_clrs = ["#E2F0D9" if v>=0 else "#FCE4D6" for v in net_v]
+        bar_edges = ["#006100" if v>=0 else "#C00000" for v in net_v]
+        bars=ax.bar(lbs,net_v,color=bar_clrs,edgecolor=bar_edges,linewidth=1.5,width=.5,zorder=3)
+        ax.axhline(0,color="#C00000",linewidth=1,linestyle="--")
+        ax.text(len(lbs)-0.5, 0, " $0 break-even", fontsize=8, color="#C00000", va="bottom")
         ax.set_title("Net Position",fontweight="bold",color=NAVY,pad=8,fontsize=10)
         ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x,_:f"${x/1000:.0f}k"))
         spread=max(abs(v) for v in net_v)
         for b,v in zip(bars,net_v):
-            ax.text(b.get_x()+b.get_width()/2,v+spread*.05*(1 if v>=0 else -1),fmt(v),ha="center",va="bottom" if v>=0 else "top",fontsize=7,fontweight="bold",color=NAVY)
+            clr = "#006100" if v>=0 else "#C00000"
+            ax.text(b.get_x()+b.get_width()/2,
+                    v+spread*.05*(1 if v>=0 else -1),
+                    fmt(v),ha="center",
+                    va="bottom" if v>=0 else "top",
+                    fontsize=7,fontweight="bold",color=clr)
         plt.xticks(fontsize=8); plt.tight_layout(); st.pyplot(fig); plt.close()
 
     with col3:
