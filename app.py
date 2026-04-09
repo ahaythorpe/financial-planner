@@ -142,6 +142,30 @@ def calc_pre_retirement(client, current_age, retirement_age,
         "on_track":            readiness_gap >= 0,
     }
 
+def calc_retirement_drawdown(client,
+    drawdown_rate=0.04, desired_income=80000,
+    gr=0.07, years=25):
+    total=(float(client["super_balance"])+
+           float(client["investments"])+
+           float(client["cash"]))
+    sustainable=round(total*drawdown_rate)
+    rows=[]; depleted=None
+    for y in range(years+1):
+        rows.append({"Year":y,"Assets":round(total),
+            "Income":round(total*drawdown_rate)})
+        if total<=0 and depleted is None:
+            depleted=y
+        if y<years:
+            total=max(0,total*(1+gr)-total*drawdown_rate)
+    return {
+        "sustainable_income":sustainable,
+        "desired_income":desired_income,
+        "shortfall":sustainable-desired_income,
+        "depleted_year":depleted,
+        "on_track":depleted is None,
+        "projection":pd.DataFrame(rows).set_index("Year"),
+    }
+
 def fmt(v):
     if v is None or (isinstance(v,float) and np.isnan(v)): return ""
     return f"${v:,.0f}" if v>=0 else f"(${abs(v):,.0f})"
@@ -293,6 +317,17 @@ with st.sidebar:
     else:
         retirement_age = 67
         target_income  = 80000
+    if older_age >= 65:
+        drawdown_rate = st.slider("Drawdown rate (%)",
+            2.0, 8.0, 4.0, 0.5,
+            disabled=demo_mode) / 100
+        desired_income = st.number_input(
+            "Desired retirement income ($)",
+            min_value=0, step=5000,
+            value=80000, disabled=demo_mode)
+    else:
+        drawdown_rate  = 0.04
+        desired_income = 80000
 
     st.markdown("<div style='font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#aaa;margin:8px 0 4px'>Income & Expenses</div>", unsafe_allow_html=True)
     income   = st.number_input("Income ($)",   min_value=0,step=5000,  value=p["income"]        if p else 160000, disabled=demo_mode)
@@ -1096,7 +1131,61 @@ with t_life:
         target super, readiness gap, and years to close shortfall.
         </div></div>""", unsafe_allow_html=True)
 
-    st.markdown("""
+    if older_age>=65:
+        rd=calc_retirement_drawdown(base_client,
+            drawdown_rate,desired_income,gr)
+        st.markdown("---")
+        st.markdown("#### Retirement Drawdown Analysis")
+        c1,c2,c3=st.columns(3)
+        with c1:
+            st.metric("Sustainable income p.a.",
+                fmt(rd["sustainable_income"]))
+        with c2:
+            st.metric("Desired income",
+                fmt(rd["desired_income"]))
+        with c3:
+            st.metric("Surplus / shortfall",
+                fmt(rd["shortfall"]),
+                delta_color="normal" if rd["shortfall"]>=0
+                    else "inverse")
+        if rd["on_track"]:
+            st.success("Assets projected to last "
+                "beyond the 25-year planning horizon.")
+        else:
+            st.error(f"Assets projected to deplete in "
+                f"year {rd['depleted_year']}. Consider "
+                f"reducing drawdown rate.")
+        proj=rd["projection"]
+        fig,ax=plt.subplots(figsize=(11,4))
+        ax.fill_between(proj.index,
+            proj["Assets"]/1e6,alpha=.15,color=NAVY)
+        ax.plot(proj.index,proj["Assets"]/1e6,
+            color=NAVY,linewidth=2.5,
+            label="Remaining assets")
+        ax.axhline(0,color="#C00000",
+            linewidth=1,linestyle="--")
+        if rd["depleted_year"]:
+            ax.axvline(rd["depleted_year"],
+                color="#C00000",linewidth=1,linestyle=":")
+            ax.annotate(
+                f"Depleted year {rd['depleted_year']}",
+                xy=(rd["depleted_year"],0),
+                fontsize=8,color="#C00000",
+                fontweight="bold")
+        ax.set_title("Asset Drawdown Projection",
+            fontweight="bold",color=NAVY,pad=10)
+        ax.set_xlabel("Year in retirement")
+        ax.set_ylabel("Assets ($M)")
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(
+            lambda x,_:f"${x:.1f}M"))
+        ax.legend(fontsize=9)
+        plt.tight_layout(); st.pyplot(fig); plt.close()
+        st.caption("Age Pension not modelled — eligible "
+            "from age 67 for most Australians. "
+            "Assess via Services Australia. "
+            "Projections illustrative only.")
+    else:
+        st.markdown("""
     <div style='background:#F8F7F4;border-radius:10px;padding:1rem 1.25rem;
     margin-bottom:12px;border:0.5px solid #E5E7EB;opacity:0.7'>
     <div style='font-size:11px;text-transform:uppercase;letter-spacing:.08em;
