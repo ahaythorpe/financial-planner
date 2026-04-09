@@ -1,1314 +1,702 @@
-"""
-Financial Planner — Streamlit Application
-Client scenario analysis: balance sheet, comparison, charts, and projections.
-"""
-
-import io
-import base64
-import datetime
-import warnings
-
-warnings.filterwarnings("ignore")
-
+import streamlit as st
 import pandas as pd
-import matplotlib
-matplotlib.use("Agg")
+import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
-import streamlit as st
+from datetime import date
 
-# ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="Financial Planner",
+    page_title="Financial Scenario Planner",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# ── Colour palette ────────────────────────────────────────────────────────────
+# ── Palette ──────────────────────────────────────────────────────
 NAVY     = "#1B2E4B"
 S1_COLOR = "#6B3FA0"
 TEAL     = "#1D9E75"
-BG_POS   = "#E2F0D9"
-TXT_POS  = "#006100"
-BG_NEG   = "#FCE4D6"
-TXT_NEG  = "#C00000"
-EXTRA_COLORS = ["#4E79A7", "#B07AA1", "#9C755F", "#76B7B2", "#D7B5A6", "#499894"]
+BG_POS   = "#E2F0D9"; TXT_POS = "#006100"
+BG_NEG   = "#FCE4D6"; TXT_NEG = "#C00000"
 
-plt.rcParams.update({
-    "font.family":       "sans-serif",
-    "font.size":         10,
-    "figure.facecolor":  "white",
-    "axes.facecolor":    "white",
-    "axes.spines.top":   False,
-    "axes.spines.right": False,
-    "axes.grid":         True,
-    "grid.alpha":        0.25,
-    "grid.linestyle":    "--",
-})
+EXTRA_COLORS = ["#2E86AB","#D85A30","#457B9D","#993556","#2D6A4F","#8B5E3C"]
 
-TOTAL_ROWS = {"TOTAL ASSETS", "TOTAL LIABILITIES", "NET POSITION"}
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Serif+Display&display=swap');
+html,body,[class*="css"]{font-family:'DM Sans',sans-serif;}
+.report-header{background:#1B2E4B;color:white;padding:1.5rem 2rem;border-radius:12px;margin-bottom:1.5rem;}
+.report-header h1{font-family:'DM Serif Display',serif;font-size:1.8rem;font-weight:400;margin:0 0 0.2rem;color:white;}
+.report-header p{margin:0;opacity:.7;font-size:.85rem;color:white;}
+.metric-row{display:flex;gap:10px;margin-bottom:1.2rem;flex-wrap:wrap;}
+.metric-card{background:white;border-radius:10px;padding:.9rem 1.1rem;flex:1;min-width:130px;border:.5px solid #E5E7EB;}
+.metric-label{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#888;margin-bottom:5px;}
+.metric-value{font-size:1.4rem;font-weight:600;font-variant-numeric:tabular-nums;}
+.metric-value.pos{color:#006100;} .metric-value.neg{color:#C00000;}
+.metric-sub{font-size:10px;color:#aaa;margin-top:3px;}
+.badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:500;margin:2px 3px 2px 0;}
+.badge-risk{background:#FCE4D6;color:#C00000;} .badge-ok{background:#E2F0D9;color:#006100;}
+.word-table{width:100%;border-collapse:collapse;font-size:13px;background:white;}
+.word-table th{background:#F2F2F2;color:#1B2E4B;font-weight:600;border-top:2px solid #1B2E4B;border-bottom:2px solid #1B2E4B;padding:9px 13px;text-align:right;font-size:11px;text-transform:uppercase;letter-spacing:.04em;}
+.word-table th:first-child{text-align:left;}
+.word-table td{border-bottom:.5px solid #E5E7EB;padding:8px 13px;text-align:right;font-variant-numeric:tabular-nums;color:#1B2E4B;}
+.word-table td:first-child{text-align:left;}
+.word-table tr.total td{font-weight:600;border-top:2px solid #1B2E4B;border-bottom:2px solid #1B2E4B;}
+.word-table tr.divider td{border:none;padding:2px 0;}
+.cell-pos{background:#E2F0D9!important;color:#006100!important;font-weight:500;}
+.cell-neg{background:#FCE4D6!important;color:#C00000!important;font-weight:500;}
+.demo-banner{background:#EFF6FF;border:1px solid #BFDBFE;border-radius:8px;padding:.75rem 1rem;margin-bottom:1rem;font-size:13px;color:#1E40AF;}
+</style>
+""", unsafe_allow_html=True)
 
-WORD_STYLES = [
-    {"selector": "caption",
-     "props": "font-size:13pt; font-weight:bold; text-align:left; "
-              "padding:10px 0 6px 0; color:" + NAVY + ";"},
-    {"selector": "table",
-     "props": "border-collapse:collapse; background-color:white; width:100%;"},
-    {"selector": "thead th",
-     "props": ("background:#F2F2F2; color:" + NAVY + "; font-weight:bold; "
-               "border-top:2px solid " + NAVY + "; border-bottom:2px solid " + NAVY + "; "
-               "border-left:1px solid #D0D0D0; border-right:1px solid #D0D0D0; "
-               "padding:8px 14px; font-size:10pt;")},
-    {"selector": "th.col_heading",
-     "props": "text-align:center; color:" + NAVY + ";"},
-    {"selector": "th.row_heading",
-     "props": ("text-align:left; color:" + NAVY + "; font-weight:bold; "
-               "background:white; border:1px solid #D0D0D0; padding:8px 14px;")},
-    {"selector": "td",
-     "props": ("border:1px solid #D0D0D0; padding:8px 14px; text-align:right; "
-               "font-variant-numeric:tabular-nums; font-size:10pt; color:" + NAVY + ";")},
-]
+# ── Demo client — locked ─────────────────────────────────────────
+DEMO = dict(name="Sarah & Daniel", income=160000, expenses=95000,
+            super_balance=120000, investments=40000, cash=15000, debt=420000)
 
-# ── Preset profiles ───────────────────────────────────────────────────────────
-PRESETS = {
-    "Young Professional": dict(
-        client_name="Alex Chen",
-        income=80_000, expenses=55_000,
-        super_balance=25_000, investments=10_000, cash=8_000, debt=0,
-    ),
-    "Sarah & Daniel": dict(
-        client_name="Sarah & Daniel",
-        income=160_000, expenses=95_000,
-        super_balance=120_000, investments=40_000, cash=15_000, debt=420_000,
-    ),
-    "Pre-Retiree": dict(
-        client_name="Margaret & Tom",
-        income=140_000, expenses=80_000,
-        super_balance=450_000, investments=120_000, cash=40_000, debt=150_000,
-    ),
-    "High Net Worth": dict(
-        client_name="James & Claire",
-        income=300_000, expenses=120_000,
-        super_balance=600_000, investments=500_000, cash=80_000, debt=200_000,
-    ),
-}
+# ── Model functions ──────────────────────────────────────────────
+def calculate_financials(c):
+    assets = c["cash"] + c["investments"] + c["super_balance"]
+    liab   = c["debt"]
+    net    = assets - liab
+    sur    = c["income"] - c["expenses"]
+    return dict(total_assets=assets, total_liabilities=liab,
+                net_position=net, surplus=sur,
+                savings_rate=sur/c["income"] if c["income"] else 0,
+                debt_to_assets=liab/assets if assets else 0,
+                emergency_months=(c["cash"]/c["expenses"])*12 if c["expenses"] else 0)
 
-# ── Life stage configuration ──────────────────────────────────────────────────
-LIFE_STAGES = [
-    "Early Accumulation (25\u201335)",
-    "Accumulation (35\u201350)",
-    "Pre-retirement (50\u201365)",
-    "Retirement (65+)",
-    "Custom",
-]
+def assess_financial_risk(c, r):
+    f = []
+    if r["savings_rate"]  < 0.1:               f.append("Low savings rate (< 10%)")
+    if c["cash"]          < c["expenses"]*0.2:  f.append("Low emergency buffer (< 20% of expenses)")
+    if c["debt"]          > r["total_assets"]*0.7: f.append("High leverage (debt > 70% of assets)")
+    if c["super_balance"] < c["income"]:        f.append("Under-funded superannuation")
+    return f
 
-LIFE_STAGE_CONFIG = {
-    "Early Accumulation (25\u201335)": dict(
-        income=65_000, expenses=45_000,
-        super_balance=15_000, investments=5_000, cash=5_000, debt=0,
-        proj_years=35,
-        description="Building foundations \u2014 longer time horizon, lower starting balances.",
-    ),
-    "Accumulation (35\u201350)": dict(
-        income=160_000, expenses=95_000,
-        super_balance=120_000, investments=40_000, cash=15_000, debt=420_000,
-        proj_years=20,
-        description="Peak earning and wealth-building years \u2014 balance growth with debt reduction.",
-    ),
-    "Pre-retirement (50\u201365)": dict(
-        income=150_000, expenses=80_000,
-        super_balance=400_000, investments=100_000, cash=30_000, debt=100_000,
-        proj_years=15,
-        description="Consolidation phase \u2014 maximise super and eliminate debt before retirement.",
-    ),
-    "Retirement (65+)": dict(
-        income=30_000, expenses=60_000,
-        super_balance=600_000, investments=150_000, cash=40_000, debt=0,
-        proj_years=20,
-        description="Drawdown phase \u2014 projecting asset depletion at 4% annual withdrawal.",
-    ),
-    "Custom": dict(
-        income=160_000, expenses=95_000,
-        super_balance=120_000, investments=40_000, cash=15_000, debt=420_000,
-        proj_years=20,
-        description="All values set manually \u2014 no defaults applied.",
-    ),
-}
+def create_scenario(base, changes, name="Scenario"):
+    s = base.copy(); s.update(changes); s["scenario_name"] = name; return s
 
+def run_model(c):
+    r = calculate_financials(c)
+    return dict(results=r, risk_flags=assess_financial_risk(c, r))
 
-def _apply_preset(name):
-    p = PRESETS[name]
-    st.session_state.update(p)
-    st.session_state.update(dict(
-        s1_income=p["income"],       s1_expenses=p["expenses"],
-        s1_debt=p["debt"],           s1_cash=p["cash"],
-        s1_super=p["super_balance"], s1_inv=p["investments"],
-        s2_income=p["income"],       s2_expenses=p["expenses"],
-        s2_debt=p["debt"],           s2_cash=p["cash"],
-        s2_super=p["super_balance"], s2_inv=p["investments"],
-    ))
-
-
-def _apply_life_stage(stage_name):
-    cfg = LIFE_STAGE_CONFIG[stage_name]
-    if stage_name != "Custom":
-        st.session_state.update({
-            "income":        cfg["income"],
-            "expenses":      cfg["expenses"],
-            "super_balance": cfg["super_balance"],
-            "investments":   cfg["investments"],
-            "cash":          cfg["cash"],
-            "debt":          cfg["debt"],
-        })
-    st.session_state["proj_years"] = cfg["proj_years"]
-
-
-def _on_life_stage_change():
-    _apply_life_stage(st.session_state["life_stage"])
-
-
-# ── Session state defaults ────────────────────────────────────────────────────
-_BASE = PRESETS["Sarah & Daniel"]
-_SS_DEFAULTS = {
-    **_BASE,
-    "s1_strategy": "Income Improvement", "s1_name": "Income Improvement",
-    "s1_income": 180_000, "s1_expenses": 90_000,
-    "s1_debt": _BASE["debt"],             "s1_cash": _BASE["cash"],
-    "s1_super": _BASE["super_balance"],   "s1_inv": _BASE["investments"],
-    "s2_strategy": "Debt Reduction",      "s2_name": "Debt Reduction",
-    "s2_income": _BASE["income"],         "s2_expenses": _BASE["expenses"],
-    "s2_debt": 350_000,                   "s2_cash": 10_000,
-    "s2_super": _BASE["super_balance"],   "s2_inv": _BASE["investments"],
-    "extra_scenarios": [],
-    "scenario_id_counter": 3,
-    "life_stage":            "Accumulation (35\u201350)",
-    "proj_years":            20,
-    "growth_rate_param":     7.0,
-    "sg_rate_param":         11.5,
-    "debt_repayment_param":  20_000,
-    "inflation_adj":         False,
-}
-for _k, _v in _SS_DEFAULTS.items():
-    if _k not in st.session_state:
-        st.session_state[_k] = _v
-
-
-# ── Model functions ───────────────────────────────────────────────────────────
-def calculate_financials(client):
-    ta  = client["cash"] + client["investments"] + client["super_balance"]
-    tl  = client["debt"]
-    sur = client["income"] - client["expenses"]
-    sr  = sur / client["income"] if client["income"] else 0.0
-    dta = tl / ta if ta else 0.0
-    em  = (client["cash"] / client["expenses"]) * 12 if client["expenses"] else 0.0
-    return dict(
-        total_assets=ta, total_liabilities=tl, net_position=ta - tl,
-        surplus=sur, savings_rate=sr, debt_to_assets=dta, emergency_months=em,
-    )
-
-
-def assess_financial_risk(client, results, life_stage="Accumulation (35\u201350)"):
-    flags = []
-    if results["savings_rate"] < 0.1:
-        flags.append("Low savings rate")
-    if client["cash"] < client["expenses"] * 0.2:
-        flags.append("Low emergency buffer")
-    if client["debt"] > results["total_assets"] * 0.7:
-        flags.append("High leverage")
-    if life_stage == "Pre-retirement (50\u201365)":
-        if client["super_balance"] < client["income"] * 5:
-            flags.append("Low super for pre-retiree (target: 5\u00d7 income)")
-    elif life_stage != "Retirement (65+)":
-        if client["super_balance"] < client["income"]:
-            flags.append("Low super balance (below 1\u00d7 income)")
-    return flags
-
-
-def run_model(client, life_stage="Accumulation (35\u201350)"):
-    r = calculate_financials(client)
-    return {"results": r, "risk_summary": assess_financial_risk(client, r, life_stage)}
-
-
-def project_wealth(client, years=20, growth_rate=0.07, sg_rate=0.115, debt_repayment=20_000):
-    sup   = float(client["super_balance"])
-    inv   = float(client["investments"])
-    cash  = float(client["cash"])
-    debt  = float(client["debt"])
-    extra = max(0.0, client["income"] - client["expenses"] - debt_repayment)
-    rows  = []
-    for y in range(years + 1):
-        rows.append({"Year": y, "Net Worth": round(sup + inv + cash - debt)})
-        if y < years:
-            sup  = sup  * (1 + growth_rate) + client["income"] * sg_rate
-            inv  = inv  * (1 + growth_rate) + extra
-            debt = max(0.0, debt - debt_repayment)
+def project_wealth(c, years=20, gr=0.07, sg=0.115, rep=20000):
+    sup=float(c["super_balance"]); inv=float(c["investments"])
+    cash=float(c["cash"]); debt=float(c["debt"])
+    extra=max(0, c["income"]-c["expenses"]-rep)
+    rows=[]
+    for y in range(years+1):
+        rows.append({"Year":y,"Net Worth":round(sup+inv+cash-debt)})
+        if y<years:
+            sup=sup*(1+gr)+c["income"]*sg
+            inv=inv*(1+gr)+extra
+            debt=max(0.0,debt-rep)
     return pd.DataFrame(rows).set_index("Year")
 
+def fmt(v):
+    if v is None or (isinstance(v,float) and np.isnan(v)): return ""
+    return f"${v:,.0f}" if v>=0 else f"(${abs(v):,.0f})"
 
-def project_drawdown(client, years=20, growth_rate=0.07):
-    """Retirement drawdown: assets grow but are drawn down to cover expenses net of income."""
-    assets      = float(client["super_balance"]) + float(client["investments"]) + float(client["cash"])
-    income      = float(client["income"])
-    expenses    = float(client["expenses"])
-    rows        = []
-    depleted_yr = None
-    for y in range(years + 1):
-        rows.append({"Year": y, "Net Worth": round(max(0.0, assets))})
-        if y < years:
-            net_draw = max(0.0, expenses - income)
-            assets   = assets * (1 + growth_rate) - net_draw
-            if assets <= 0 and depleted_yr is None:
-                depleted_yr = y + 1
-                assets = 0.0
-    return pd.DataFrame(rows).set_index("Year"), depleted_yr
+def cc(v):
+    if not isinstance(v,(int,float)) or np.isnan(v): return ""
+    return "cell-pos" if v>0 else "cell-neg" if v<0 else ""
 
+plt.rcParams.update({"font.family":"sans-serif","font.size":10,
+    "figure.facecolor":"white","axes.facecolor":"white",
+    "axes.spines.top":False,"axes.spines.right":False,
+    "axes.grid":True,"grid.alpha":.2,"grid.linestyle":"--"})
 
-def _run_projection(client, years, growth_rate, sg_rate, debt_repayment, is_retirement):
-    if is_retirement:
-        df, depl = project_drawdown(client, years=years, growth_rate=growth_rate)
-        return df, depl
-    return project_wealth(client, years=years, growth_rate=growth_rate,
-                          sg_rate=sg_rate, debt_repayment=debt_repayment), None
-
-
-# ── Formatting helpers ────────────────────────────────────────────────────────
-def fmt_currency(v):
-    if pd.isna(v):
-        return ""
-    return f"${v:,.0f}" if v >= 0 else f"(${abs(v):,.0f})"
-
-
-def sign_style(v):
-    if not isinstance(v, (int, float)) or pd.isna(v):
-        return "color:" + NAVY + ";"
-    if v < 0:
-        return "background-color:" + BG_NEG + "; color:" + TXT_NEG + ";"
-    if v > 0:
-        return "background-color:" + BG_POS + "; color:" + TXT_POS + ";"
-    return "color:" + NAVY + ";"
-
-
-def _tbl(styler):
-    return '<div style="overflow-x:auto; margin-bottom:1.5rem;">' + styler.to_html() + "</div>"
-
-
-def _metric_card(label, value, subtext, healthy):
-    bg  = BG_POS if healthy else BG_NEG
-    bdr = TXT_POS if healthy else TXT_NEG
-    vc  = TXT_POS if healthy else TXT_NEG
-    return (
-        '<div style="background:' + bg + '; border-left:4px solid ' + bdr + '; '
-        'border-radius:6px; padding:16px 20px;">'
-        '<div style="font-size:10pt; font-weight:600; color:' + NAVY + ';">' + label + '</div>'
-        '<div style="font-size:18pt; font-weight:bold; color:' + vc + '; margin-top:6px;">' + value + '</div>'
-        '<div style="font-size:8.5pt; color:' + NAVY + '; opacity:0.7; margin-top:4px;">' + subtext + '</div>'
-        '</div>'
-    )
-
-
-# ── Chart builders ────────────────────────────────────────────────────────────
-def _fig_to_b64(fig):
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", bbox_inches="tight", dpi=150)
-    buf.seek(0)
-    return base64.b64encode(buf.read()).decode()
-
-
-def make_scenario_charts(base_r, s1_r, s2_r, base_client, s1_lbl, s2_lbl):
-    names  = ["Base Case", s1_lbl, s2_lbl]
-    colors = [NAVY, S1_COLOR, TEAL]
-    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-
-    ax   = axes[0]
-    vals = [base_r["surplus"], s1_r["surplus"], s2_r["surplus"]]
-    ymax = max(max(vals) * 1.3, 1)
-    bars = ax.bar(names, vals, color=colors, width=0.5, zorder=3)
-    ax.set_ylim(0, ymax)
-    ax.set_title("Annual Surplus", fontweight="bold", color=NAVY, pad=10)
-    ax.set_ylabel("Amount ($)", color=NAVY)
-    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"${x:,.0f}"))
-    ax.tick_params(colors=NAVY)
-    for bar, v in zip(bars, vals):
-        ax.text(bar.get_x() + bar.get_width() / 2, v + ymax * 0.02,
-                f"${v:,.0f}", ha="center", va="bottom", fontsize=9, fontweight="bold", color=NAVY)
-
-    ax   = axes[1]
-    vals = [base_r["net_position"], s1_r["net_position"], s2_r["net_position"]]
-    spread = max((abs(v) for v in vals), default=1) or 1
-    bars = ax.bar(names, vals, color=colors, width=0.5, zorder=3)
-    ax.axhline(0, color="#999", linewidth=0.8, linestyle="--")
-    ax.set_title("Net Position", fontweight="bold", color=NAVY, pad=10)
-    ax.set_ylabel("Amount ($)", color=NAVY)
-    ax.yaxis.set_major_formatter(
-        mticker.FuncFormatter(lambda x, _: f"${x:,.0f}" if x >= 0 else f"(${abs(x):,.0f})")
-    )
-    ax.tick_params(colors=NAVY)
-    for bar, v in zip(bars, vals):
-        lbl = f"${v:,.0f}" if v >= 0 else f"(${abs(v):,.0f})"
-        if v >= 0:
-            ax.text(bar.get_x() + bar.get_width() / 2, v + spread * 0.02, lbl,
-                    ha="center", va="bottom", fontsize=9, fontweight="bold", color=NAVY)
-        else:
-            ax.text(bar.get_x() + bar.get_width() / 2, v + spread * 0.05, lbl,
-                    ha="center", va="bottom", fontsize=9, fontweight="bold", color="white")
-
-    ax    = axes[2]
-    sizes = [base_client["super_balance"], base_client["investments"], base_client["cash"]]
-    lbls  = ["Superannuation", "Investments", "Cash"]
-    if sum(sizes) > 0:
-        _, _, autotexts = ax.pie(
-            sizes, labels=lbls, colors=colors, autopct="%1.0f%%", startangle=90,
-            wedgeprops={"linewidth": 1.5, "edgecolor": "white"},
-            textprops={"fontsize": 9},
-        )
-        for at in autotexts:
-            at.set_fontweight("bold")
-    else:
-        ax.text(0.5, 0.5, "No assets entered", ha="center", va="center",
-                transform=ax.transAxes, color=NAVY)
-    ax.set_title("Asset Composition\n(Base Case)", fontweight="bold", color=NAVY, pad=10)
-
-    plt.tight_layout()
-    return fig, _fig_to_b64(fig)
-
-
-def make_projection_chart(base_proj, s1_proj, s2_proj, client_name,
-                          s1_lbl, s2_lbl, proj_years, extra_projections=None):
-    fig, ax = plt.subplots(figsize=(12, 6))
-
-    ax.plot(base_proj.index, base_proj["Net Worth"] / 1e6,
-            color=NAVY, linewidth=2.5, label="Base Case", zorder=3)
-    ax.plot(s1_proj.index, s1_proj["Net Worth"] / 1e6,
-            color=S1_COLOR, linewidth=2.5, linestyle="--", label=s1_lbl, zorder=3)
-    ax.plot(s2_proj.index, s2_proj["Net Worth"] / 1e6,
-            color=TEAL, linewidth=2.5, linestyle=":", label=s2_lbl, zorder=3)
-
-    _extra_styles = ["-.", (0, (3, 1, 1, 1)), (0, (5, 2, 1, 2)), "-", "--"]
-    for i, (proj, lbl, color) in enumerate(extra_projections or []):
-        ax.plot(proj.index, proj["Net Worth"] / 1e6,
-                color=color, linewidth=2.0,
-                linestyle=_extra_styles[i % len(_extra_styles)],
-                label=lbl, zorder=3)
-        v = proj.loc[proj_years, "Net Worth"]
-        ax.annotate(f"  ${v / 1e6:.2f}M", xy=(proj_years, v / 1e6),
-                    fontsize=9, fontweight="bold", color=color, va="center")
-
-    ax.axhline(0, color="#ccc", linewidth=1.0)
-    ax.fill_between(base_proj.index, 0, base_proj["Net Worth"] / 1e6,
-                    where=(base_proj["Net Worth"] > 0), alpha=0.06, color=NAVY)
-
-    for proj, color in [(base_proj, NAVY), (s1_proj, S1_COLOR), (s2_proj, TEAL)]:
-        v = proj.loc[proj_years, "Net Worth"]
-        ax.annotate(f"  ${v / 1e6:.2f}M", xy=(proj_years, v / 1e6),
-                    fontsize=9, fontweight="bold", color=color, va="center")
-
-    ax.set_title(f"Wealth Projection \u2014 {client_name}",
-                 fontsize=12, fontweight="bold", color=NAVY, pad=12)
-    ax.set_xlabel("Year", color=NAVY)
-    ax.set_ylabel("Net Worth ($M)", color=NAVY)
-    _tick_step = max(2, (proj_years // 10) * 2)
-    ax.set_xticks(range(0, proj_years + 1, _tick_step))
-    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"${x:.1f}M"))
-    ax.legend(framealpha=0.9, fontsize=9, loc="upper left")
-    ax.tick_params(colors=NAVY)
-    plt.tight_layout()
-    return fig, _fig_to_b64(fig)
-
-
-# ── HTML report builder ───────────────────────────────────────────────────────
-def _card_html(label, value, subtext, healthy):
-    bg  = BG_POS if healthy else BG_NEG
-    bdr = TXT_POS if healthy else TXT_NEG
-    vc  = TXT_POS if healthy else TXT_NEG
-    return (
-        '<div style="background:' + bg + '; border-left:4px solid ' + bdr + '; '
-        'border-radius:6px; padding:14px 18px;">'
-        '<div style="font-size:10pt; font-weight:600; color:' + NAVY + ';">' + label + '</div>'
-        '<div style="font-size:17pt; font-weight:bold; color:' + vc + '; margin-top:6px;">' + value + '</div>'
-        '<div style="font-size:8.5pt; color:' + NAVY + '; opacity:0.65; margin-top:4px;">' + subtext + '</div>'
-        '</div>'
-    )
-
-
-def build_html_report(client_name, today, base_r, base_client, flags,
-                      bal_html, comp_html, milestone_html,
-                      charts_b64, proj_b64, s1_lbl, s2_lbl):
-    sr_str = "{:.1f}%".format(base_r["savings_rate"] * 100)
-    em_str = "{:.1f} months".format(base_r["emergency_months"])
-    em_ok  = base_client["cash"] >= base_client["expenses"] * 0.2
-    card1 = _card_html("Net Position",    fmt_currency(base_r["net_position"]),
-                       "Total assets minus liabilities", base_r["net_position"] >= 0)
-    card2 = _card_html("Annual Surplus",  fmt_currency(base_r["surplus"]),
-                       "Income minus expenses", base_r["surplus"] > 0)
-    card3 = _card_html("Savings Rate",    sr_str, "Target: >= 10%", base_r["savings_rate"] >= 0.1)
-    card4 = _card_html("Emergency Buffer", em_str, "Threshold: 2.4 months", em_ok)
-    badges = "".join(
-        '<span style="background:' + BG_NEG + '; color:' + TXT_NEG + '; border:1px solid ' + TXT_NEG + '; '
-        'border-radius:12px; padding:3px 12px; font-size:9pt; font-weight:600; '
-        'margin-right:6px; display:inline-block;">&#9888; ' + flag + '</span>'
-        for flag in flags
-    )
-    flag_section = (
-        '<h2 style="color:' + NAVY + ';">Risk Flags</h2>' + badges
-        if flags else
-        '<p style="color:' + TXT_POS + '; font-weight:600;">&#10003; No risk flags identified.</p>'
-    )
-    return (
-        "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n"
-        "  <meta charset=\"UTF-8\">\n"
-        "  <title>Financial Report \u2014 " + client_name + "</title>\n"
-        "  <style>\n"
-        "    body { font-family: Arial, sans-serif; color: " + NAVY + "; "
-        "max-width: 1100px; margin: 40px auto; padding: 0 24px; line-height: 1.5; }\n"
-        "    h1 { color: " + NAVY + "; border-bottom: 2px solid " + NAVY + "; "
-        "padding-bottom: 8px; margin-bottom: 4px; }\n"
-        "    h2 { color: " + NAVY + "; margin-top: 2rem; font-size: 13pt; }\n"
-        "    .meta { color: " + NAVY + "; opacity: 0.7; font-size: 11pt; margin: 0; }\n"
-        "    .metric-grid { display: grid; grid-template-columns: repeat(4, 1fr); "
-        "gap: 16px; margin: 1rem 0; }\n"
-        "    .footnote { font-size: 9pt; color: " + NAVY + "; opacity: 0.65; "
-        "margin-top: 2.5rem; border-top: 1px solid #D0D0D0; padding-top: 1rem; }\n"
-        "  </style>\n</head>\n<body>\n"
-        "  <h1>Financial Scenario Analysis</h1>\n"
-        "  <p class=\"meta\">" + client_name + " &nbsp;&middot;&nbsp; " + today + "</p>\n"
-        "  <h2>Key Metrics \u2014 Base Case</h2>\n"
-        "  <div class=\"metric-grid\">\n"
-        "    " + card1 + "\n    " + card2 + "\n    " + card3 + "\n    " + card4 + "\n"
-        "  </div>\n"
-        "  " + flag_section + "\n"
-        "  <h2>Statement of Financial Position</h2>\n  " + bal_html + "\n"
-        "  <h2>Scenario Comparison</h2>\n  " + comp_html + "\n"
-        "  <h2>Scenario Analysis Charts</h2>\n"
-        "  <img src=\"data:image/png;base64," + charts_b64 + "\" style=\"max-width:100%;\" alt=\"Charts\"/>\n"
-        "  <h2>Wealth Projection</h2>\n"
-        "  <img src=\"data:image/png;base64," + proj_b64 + "\" style=\"max-width:100%;\" alt=\"Projection\"/>\n"
-        "  <h2>Projected Net Worth \u2014 Milestones</h2>\n  " + milestone_html + "\n"
-        "  <div class=\"footnote\">\n"
-        "    <strong>Model Assumptions:</strong> "
-        "Investment and superannuation growth: 7.0% p.a. | "
-        "Superannuation guarantee: 11.5% of income p.a. | "
-        "Annual debt repayment: $20,000 | "
-        "Surplus above repayment reinvested into portfolio | "
-        "Income and expenses held constant in real terms. "
-        "Projections are illustrative only and do not constitute financial advice.\n"
-        "  </div>\n</body>\n</html>"
-    )
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# SIDEBAR
-# ═══════════════════════════════════════════════════════════════════════════════
-extra_scenario_changes = {}
-
+# ── Sidebar ──────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("## \u2699\ufe0f Client Inputs")
-
-    # ── Life stage selector ───────────────────────────────────────────────────
-    st.markdown("**Life Stage**")
-    st.selectbox(
-        "Select life stage",
-        options=LIFE_STAGES,
-        key="life_stage",
-        on_change=_on_life_stage_change,
-        label_visibility="collapsed",
-    )
-    st.caption(LIFE_STAGE_CONFIG[st.session_state["life_stage"]]["description"])
-
-    st.divider()
-
-    # ── Preset profiles ───────────────────────────────────────────────────────
-    st.markdown("**Quick Profiles**")
-    _pcols = st.columns(2)
-    for _pi, _pn in enumerate(PRESETS):
-        if _pcols[_pi % 2].button(_pn, use_container_width=True, key="btn_" + _pn):
-            _apply_preset(_pn)
-            st.rerun()
-
-    st.divider()
-
-    client_name = st.text_input("Client Name", key="client_name")
-
-    st.markdown("**Income & Expenses**")
-    income   = st.number_input("Annual Income ($)",   min_value=0, step=1000, key="income")
-    expenses = st.number_input("Annual Expenses ($)", min_value=0, step=1000, key="expenses")
-
-    st.markdown("**Assets**")
-    super_balance = st.number_input("Superannuation ($)", min_value=0, step=1000, key="super_balance")
-    investments   = st.number_input("Investments ($)",    min_value=0, step=1000, key="investments")
-    cash          = st.number_input("Cash & Savings ($)", min_value=0, step=1000, key="cash")
-
-    st.markdown("**Liabilities**")
-    debt = st.number_input("Mortgage / Debt ($)", min_value=0, step=1000, key="debt")
-
-    # ── Model Parameters ──────────────────────────────────────────────────────
-    with st.expander("Model Parameters"):
-        st.slider(
-            "Growth rate (%)",
-            min_value=1.0, max_value=15.0, step=0.5,
-            key="growth_rate_param",
-            help=(
-                "Annual return assumed for investments and superannuation. "
-                "The long-run historical average for a balanced portfolio is around 7%. "
-                "Higher values produce more optimistic projections."
-            ),
-        )
-        st.slider(
-            "Super guarantee rate (%)",
-            min_value=5.0, max_value=15.0, step=0.5,
-            key="sg_rate_param",
-            help=(
-                "The Superannuation Guarantee is the percentage of income your employer "
-                "must contribute to super each year by law. "
-                "The legislated rate is 11.5% in 2024\u201325, rising to 12% in July 2025."
-            ),
-        )
-        st.slider(
-            "Annual debt repayment ($)",
-            min_value=0, max_value=100_000, step=1_000,
-            key="debt_repayment_param",
-            help=(
-                "The estimated annual reduction in your mortgage or debt principal. "
-                "This is separate from interest \u2014 it is the portion that reduces what you owe."
-            ),
-        )
-        st.slider(
-            "Projection years",
-            min_value=5, max_value=40, step=5,
-            key="proj_years",
-            help=(
-                "How many years to project forward. "
-                "The life stage selector sets a sensible default \u2014 "
-                "you can override it here."
-            ),
-        )
-        st.toggle(
-            "Inflation-adjusted returns",
-            key="inflation_adj",
-            help=(
-                "When on, reduces the growth rate by 2.5% p.a. to show wealth in "
-                "today\u2019s purchasing power (real terms). "
-                "When off, projections are in nominal (face-value) dollars."
-            ),
-        )
-
-    st.divider()
-
-    # ── Scenario 1 ───────────────────────────────────────────────────────────
-    st.markdown("**Scenario 1**")
-    s1_name  = st.text_input("Label", key="s1_name")
-    s1_strat = st.selectbox("Strategy",
-                            ["Income Improvement", "Debt Reduction", "Super Boost", "Custom"],
-                            key="s1_strategy")
-    if s1_strat == "Income Improvement":
-        _a = st.number_input("Income ($)",   min_value=0, step=1000, key="s1_income")
-        _b = st.number_input("Expenses ($)", min_value=0, step=1000, key="s1_expenses")
-        s1_changes = {"income": _a, "expenses": _b}
-    elif s1_strat == "Debt Reduction":
-        _a = st.number_input("Debt ($)", min_value=0, step=1000, key="s1_debt")
-        _b = st.number_input("Cash ($)", min_value=0, step=1000, key="s1_cash")
-        s1_changes = {"debt": _a, "cash": _b}
-    elif s1_strat == "Super Boost":
-        _a = st.number_input("Superannuation ($)", min_value=0, step=1000, key="s1_super")
-        s1_changes = {"super_balance": _a}
-    else:
-        _a = st.number_input("Income ($)",        min_value=0, step=1000, key="s1_income")
-        _b = st.number_input("Expenses ($)",       min_value=0, step=1000, key="s1_expenses")
-        _c = st.number_input("Debt ($)",           min_value=0, step=1000, key="s1_debt")
-        _d = st.number_input("Cash ($)",           min_value=0, step=1000, key="s1_cash")
-        _e = st.number_input("Superannuation ($)", min_value=0, step=1000, key="s1_super")
-        _f = st.number_input("Investments ($)",    min_value=0, step=1000, key="s1_inv")
-        s1_changes = {"income": _a, "expenses": _b, "debt": _c,
-                      "cash": _d, "super_balance": _e, "investments": _f}
-
-    st.divider()
-
-    # ── Scenario 2 ───────────────────────────────────────────────────────────
-    st.markdown("**Scenario 2**")
-    s2_name  = st.text_input("Label", key="s2_name")
-    s2_strat = st.selectbox("Strategy",
-                            ["Income Improvement", "Debt Reduction", "Super Boost", "Custom"],
-                            key="s2_strategy")
-    if s2_strat == "Income Improvement":
-        _a = st.number_input("Income ($)",   min_value=0, step=1000, key="s2_income")
-        _b = st.number_input("Expenses ($)", min_value=0, step=1000, key="s2_expenses")
-        s2_changes = {"income": _a, "expenses": _b}
-    elif s2_strat == "Debt Reduction":
-        _a = st.number_input("Debt ($)", min_value=0, step=1000, key="s2_debt")
-        _b = st.number_input("Cash ($)", min_value=0, step=1000, key="s2_cash")
-        s2_changes = {"debt": _a, "cash": _b}
-    elif s2_strat == "Super Boost":
-        _a = st.number_input("Superannuation ($)", min_value=0, step=1000, key="s2_super")
-        s2_changes = {"super_balance": _a}
-    else:
-        _a = st.number_input("Income ($)",        min_value=0, step=1000, key="s2_income")
-        _b = st.number_input("Expenses ($)",       min_value=0, step=1000, key="s2_expenses")
-        _c = st.number_input("Debt ($)",           min_value=0, step=1000, key="s2_debt")
-        _d = st.number_input("Cash ($)",           min_value=0, step=1000, key="s2_cash")
-        _e = st.number_input("Superannuation ($)", min_value=0, step=1000, key="s2_super")
-        _f = st.number_input("Investments ($)",    min_value=0, step=1000, key="s2_inv")
-        s2_changes = {"income": _a, "expenses": _b, "debt": _c,
-                      "cash": _d, "super_balance": _e, "investments": _f}
-
-    st.divider()
-
-    # ── Dynamic extra scenarios ───────────────────────────────────────────────
-    for _sc in list(st.session_state["extra_scenarios"]):
-        _id = _sc["id"]
-        _sc_defaults = {
-            "ex_{}_name".format(_id):     "Scenario {}".format(_id),
-            "ex_{}_strategy".format(_id): "Income Improvement",
-            "ex_{}_income".format(_id):   income,
-            "ex_{}_expenses".format(_id): expenses,
-            "ex_{}_debt".format(_id):     debt,
-            "ex_{}_cash".format(_id):     cash,
-            "ex_{}_super".format(_id):    super_balance,
-            "ex_{}_inv".format(_id):      investments,
-        }
-        for _dk, _dv in _sc_defaults.items():
-            if _dk not in st.session_state:
-                st.session_state[_dk] = _dv
-
-        _ex_cols = st.columns([4, 1])
-        _ex_cols[0].markdown("**Scenario {}**".format(_id))
-        if _ex_cols[1].button("\u2715", key="remove_{}".format(_id)):
-            st.session_state["extra_scenarios"] = [
-                s for s in st.session_state["extra_scenarios"] if s["id"] != _id
-            ]
-            for _sfx in ["name", "strategy", "income", "expenses", "debt", "cash", "super", "inv"]:
-                _k = "ex_{}_{}".format(_id, _sfx)
-                if _k in st.session_state:
-                    del st.session_state[_k]
-            st.rerun()
-
-        _ex_name  = st.text_input("Label", key="ex_{}_name".format(_id))
-        _ex_strat = st.selectbox(
-            "Strategy",
-            ["Income Improvement", "Debt Reduction", "Super Boost", "Custom"],
-            key="ex_{}_strategy".format(_id),
-        )
-        if _ex_strat == "Income Improvement":
-            _a = st.number_input("Income ($)",   min_value=0, step=1000, key="ex_{}_income".format(_id))
-            _b = st.number_input("Expenses ($)", min_value=0, step=1000, key="ex_{}_expenses".format(_id))
-            extra_scenario_changes[_id] = {"income": _a, "expenses": _b}
-        elif _ex_strat == "Debt Reduction":
-            _a = st.number_input("Debt ($)", min_value=0, step=1000, key="ex_{}_debt".format(_id))
-            _b = st.number_input("Cash ($)", min_value=0, step=1000, key="ex_{}_cash".format(_id))
-            extra_scenario_changes[_id] = {"debt": _a, "cash": _b}
-        elif _ex_strat == "Super Boost":
-            _a = st.number_input("Superannuation ($)", min_value=0, step=1000, key="ex_{}_super".format(_id))
-            extra_scenario_changes[_id] = {"super_balance": _a}
-        else:
-            _a = st.number_input("Income ($)",        min_value=0, step=1000, key="ex_{}_income".format(_id))
-            _b = st.number_input("Expenses ($)",       min_value=0, step=1000, key="ex_{}_expenses".format(_id))
-            _c = st.number_input("Debt ($)",           min_value=0, step=1000, key="ex_{}_debt".format(_id))
-            _d = st.number_input("Cash ($)",           min_value=0, step=1000, key="ex_{}_cash".format(_id))
-            _e = st.number_input("Superannuation ($)", min_value=0, step=1000, key="ex_{}_super".format(_id))
-            _f = st.number_input("Investments ($)",    min_value=0, step=1000, key="ex_{}_inv".format(_id))
-            extra_scenario_changes[_id] = {
-                "income": _a, "expenses": _b, "debt": _c,
-                "cash": _d, "super_balance": _e, "investments": _f,
-            }
-        st.divider()
-
-    if st.button("+ Add Scenario", use_container_width=True):
-        _new_id = st.session_state["scenario_id_counter"]
-        st.session_state["scenario_id_counter"] += 1
-        st.session_state["extra_scenarios"].append({"id": _new_id})
-        st.session_state["ex_{}_name".format(_new_id)]     = "Scenario {}".format(_new_id)
-        st.session_state["ex_{}_strategy".format(_new_id)] = "Income Improvement"
-        st.session_state["ex_{}_income".format(_new_id)]   = income
-        st.session_state["ex_{}_expenses".format(_new_id)] = expenses
-        st.session_state["ex_{}_debt".format(_new_id)]     = debt
-        st.session_state["ex_{}_cash".format(_new_id)]     = cash
-        st.session_state["ex_{}_super".format(_new_id)]    = super_balance
-        st.session_state["ex_{}_inv".format(_new_id)]      = investments
-        st.rerun()
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# BUILD CLIENTS & RUN MODEL
-# ═══════════════════════════════════════════════════════════════════════════════
-life_stage    = st.session_state["life_stage"]
-is_retirement = (life_stage == "Retirement (65+)")
-
-_eff_growth = (st.session_state["growth_rate_param"] / 100.0) - (
-    0.025 if st.session_state["inflation_adj"] else 0.0
-)
-_eff_sg     = st.session_state["sg_rate_param"] / 100.0
-_eff_repay  = st.session_state["debt_repayment_param"]
-_proj_years = st.session_state["proj_years"]
-
-base_client = dict(
-    name=client_name, income=income, expenses=expenses,
-    super_balance=super_balance, investments=investments,
-    cash=cash, debt=debt,
-)
-
-s1_lbl = (s1_name or "Scenario 1").strip() or "Scenario 1"
-s2_lbl = (s2_name or "Scenario 2").strip() or "Scenario 2"
-if s1_lbl == s2_lbl:
-    s2_lbl += " (2)"
-
-scenario_1 = {**base_client, **s1_changes}
-scenario_2 = {**base_client, **s2_changes}
-
-base_out = run_model(base_client, life_stage)
-s1_out   = run_model(scenario_1,  life_stage)
-s2_out   = run_model(scenario_2,  life_stage)
-
-base_r = base_out["results"]
-s1_r   = s1_out["results"]
-s2_r   = s2_out["results"]
-flags  = base_out["risk_summary"]
-
-base_proj, base_depl = _run_projection(base_client, _proj_years, _eff_growth, _eff_sg, _eff_repay, is_retirement)
-s1_proj,   s1_depl   = _run_projection(scenario_1,  _proj_years, _eff_growth, _eff_sg, _eff_repay, is_retirement)
-s2_proj,   s2_depl   = _run_projection(scenario_2,  _proj_years, _eff_growth, _eff_sg, _eff_repay, is_retirement)
-
-depletion_warnings = []
-for _dlbl, _dyr in [("Base Case", base_depl), (s1_lbl, s1_depl), (s2_lbl, s2_depl)]:
-    if _dyr:
-        depletion_warnings.append("{}: assets depleted at year {}".format(_dlbl, _dyr))
-
-extra_scenarios_computed = []
-_used_labels = {"Base Case", s1_lbl, s2_lbl}
-for _i, _sc in enumerate(st.session_state["extra_scenarios"]):
-    _id = _sc["id"]
-    if _id not in extra_scenario_changes:
-        continue
-    _raw_lbl = (st.session_state.get("ex_{}_name".format(_id)) or "Scenario {}".format(_id)).strip()
-    _lbl  = _raw_lbl or "Scenario {}".format(_id)
-    _dedup  = _lbl
-    _suffix = 2
-    while _dedup in _used_labels:
-        _dedup  = "{} ({})".format(_lbl, _suffix)
-        _suffix += 1
-    _used_labels.add(_dedup)
-
-    _sc_client = {**base_client, **extra_scenario_changes[_id]}
-    _sc_out    = run_model(_sc_client, life_stage)
-    _sc_proj, _sc_depl = _run_projection(_sc_client, _proj_years, _eff_growth, _eff_sg, _eff_repay, is_retirement)
-    if _sc_depl:
-        depletion_warnings.append("{}: assets depleted at year {}".format(_dedup, _sc_depl))
-    _color = EXTRA_COLORS[_i % len(EXTRA_COLORS)]
-
-    extra_scenarios_computed.append({
-        "id": _id, "label": _dedup,
-        "client": _sc_client,
-        "results": _sc_out["results"],
-        "risk_summary": _sc_out["risk_summary"],
-        "proj": _sc_proj,
-        "color": _color,
-    })
-
-today = datetime.date.today().strftime("%d %B %Y")
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# MAIN CONTENT — TABS
-# ═══════════════════════════════════════════════════════════════════════════════
-tab_about, tab_analysis = st.tabs(["About & Assumptions", "Analysis"])
-
-
-# ── TAB 1: About & Assumptions ────────────────────────────────────────────────
-with tab_about:
-    st.markdown(
-        '<h2 style="color:' + NAVY + '; margin-bottom:4px;">About This App</h2>'
-        '<p style="color:' + NAVY + '; opacity:0.65; font-size:11pt;">'
-        'A guide for financial planners and their clients.</p>',
-        unsafe_allow_html=True,
-    )
-
-    with st.expander("How to use this app", expanded=True):
-        st.markdown("""
-**Getting started**
-
-This app helps you compare a client's current financial position against alternative
-strategies, so you can have a clear, visual conversation about the impact of
-different decisions.
-
----
-
-**Step 1 \u2014 Choose a life stage**
-
-Select a life stage at the top of the sidebar. This automatically loads sensible
-starting values for that stage of life. Available stages:
-
-- **Early Accumulation (25\u201335)** \u2014 building foundations, 35-year horizon
-- **Accumulation (35\u201350)** \u2014 peak earning years, 20-year horizon
-- **Pre-retirement (50\u201365)** \u2014 consolidation phase, 15-year horizon
-- **Retirement (65+)** \u2014 drawdown phase, assets modelled as declining over time
-- **Custom** \u2014 enter all values manually, no defaults applied
-
----
-
-**Step 2 \u2014 Enter the client's details**
-
-Use the sidebar to enter the client's financial information:
-
-- **Annual Income** \u2014 total combined gross income before tax
-- **Annual Expenses** \u2014 total yearly living costs (housing, food, transport, etc.)
-- **Superannuation** \u2014 combined super balance
-- **Investments** \u2014 non-super portfolio (shares, managed funds, property trusts)
-- **Cash & Savings** \u2014 money in bank accounts or offset accounts
-- **Mortgage / Debt** \u2014 total outstanding debt balance, not monthly repayments
-
-All amounts should be entered as whole numbers with no commas or symbols.
-
----
-
-**Step 3 \u2014 Adjust model parameters (optional)**
-
-Open the **Model Parameters** section in the sidebar to override the default assumptions:
-
-- **Growth rate** \u2014 annual investment return (default 7%)
-- **Super guarantee rate** \u2014 employer super contribution (default 11.5%)
-- **Annual debt repayment** \u2014 how much principal is repaid each year (default $20,000)
-- **Projection years** \u2014 how far forward to project (set by life stage, overrideable)
-- **Inflation-adjusted returns** \u2014 toggle on to show results in today\u2019s dollars
-
----
-
-**Step 4 \u2014 Build scenarios**
-
-Scenarios let you model \u201cwhat if\u201d changes. For example: what happens if the client
-increases their income, reduces their debt, or boosts their super?
-
-- Use the **Scenario 1** and **Scenario 2** sections in the sidebar
-- Give each scenario a label (e.g. "Salary Increase")
-- Choose a strategy from the dropdown \u2014 only the relevant fields will appear
-- Click **+ Add Scenario** to compare more than two strategies
-- Click the **\u2715** button next to any extra scenario to remove it
-
----
-
-**Step 5 \u2014 Read the results**
-
-Switch to the **Analysis** tab to see the full output:
-
-- **Metric cards** \u2014 quick snapshot of net position, surplus, savings rate, and emergency buffer
-- **Risk flags** \u2014 automatic warnings when any indicator falls below a safe threshold
-- **Balance sheet** \u2014 full statement of assets and liabilities for the base case
-- **Scenario comparison table** \u2014 side-by-side figures for all five key metrics
-- **Charts** \u2014 bar charts for surplus and net position, pie chart of asset composition
-- **Projection chart** \u2014 how net worth grows (or is drawn down in retirement) over time
-- **Milestone table** \u2014 net worth at 5-year intervals across all scenarios
-
-**Reading the colour coding**
-
-A cell or card with a **green background** means the value is positive or above the
-safe threshold. A cell or card with a **red background** means the value is negative
-or below the threshold and needs attention. Chart lines use navy, purple, and teal only
-\u2014 never red or green.
-
----
-
-**Step 6 \u2014 Download the report**
-
-Click **Download HTML Report** at the bottom of the Analysis tab to save a
-standalone file with all tables and charts. Open it in any browser and print to PDF.
-""")
-
-    with st.expander("Model assumptions"):
-        st.markdown("""
-**7% annual growth rate**
-
-The model assumes investments and superannuation grow at 7% per year, before fees and taxes.
-This is broadly consistent with the long-run historical average for a balanced or growth
-portfolio across Australian and global shares and property.
-
-It is not guaranteed. In any given year returns could be significantly higher or lower.
-You can adjust the growth rate using the **Model Parameters** slider in the sidebar.
-
----
-
-**11.5% Superannuation Guarantee (SG)**
-
-The Superannuation Guarantee is the percentage of an employee\u2019s income that their
-employer must contribute to super each year, as set by law.
-
-The current legislated rate is **11.5%** for the 2024\u201325 financial year. It is scheduled
-to rise to **12%** on 1 July 2025. This model uses 11.5% as the default and does not
-automatically apply the July 2025 increase. Use the **SG rate** slider in Model Parameters
-to set 12% when modelling from July 2025 onwards.
-
----
-
-**$20,000 annual principal repayment**
-
-The model assumes $20,000 of debt principal is repaid each year. This is the portion of
-mortgage repayments that reduces the loan balance, as opposed to interest payments which
-are already included in annual expenses. You can adjust this amount in Model Parameters.
-
----
-
-**Income and expenses held flat in real terms**
-
-The model does not project income growth or expense increases over time. Both are held
-constant at the values entered for the full projection period.
-
-This is a simplifying assumption. In practice, incomes typically grow with inflation and
-career progression. Turning on the **Inflation-adjusted returns** toggle partially addresses
-this by expressing wealth in today\u2019s purchasing power rather than future dollar values.
-
----
-
-**Emergency buffer threshold: 20% of annual expenses**
-
-A risk flag is triggered when the client\u2019s cash balance is below 20% of their annual
-expenses \u2014 equivalent to approximately 2.4 months of living costs. This is the minimum
-considered prudent to cover unexpected expenses or a short period of income disruption.
-
----
-
-**Savings rate threshold: 10% of income**
-
-A savings rate below 10% of gross income is flagged as a risk. Savings rate is calculated
-as annual surplus (income minus expenses) divided by income. Below 10% indicates limited
-capacity to build wealth or absorb financial shocks.
-
----
-
-**Leverage threshold: debt above 70% of total assets**
-
-If total debt exceeds 70% of total assets, the model flags high leverage. This indicates
-the asset base is predominantly funded by borrowing, which increases vulnerability if
-asset values fall or income is disrupted.
-
----
-
-**Super balance thresholds**
-
-For clients in the accumulation phase, a super balance below **1\u00d7 annual income** is flagged.
-For pre-retirement clients (50\u201365), the threshold rises to **5\u00d7 annual income** to reflect
-the shorter time remaining to build an adequate retirement balance.
-
-For retirement clients, the model switches to a drawdown projection and will flag if
-projected assets are fully depleted before the end of the projection period.
-
----
-
-**Retirement drawdown model**
-
-When the **Retirement (65+)** life stage is selected, the projection switches from an
-accumulation model to a drawdown model. Each year, the remaining assets grow at the
-selected growth rate, then the net annual shortfall (expenses minus income) is withdrawn.
-If assets reach zero, a depletion warning is shown indicating the year funds run out.
-""")
-
-    with st.expander("Known limitations"):
-        st.markdown("""
-The following factors are **not modelled** in the current version.
-Be aware of these when interpreting results with clients.
-
----
-
-**Concessional contributions cap not applied**
-
-The model adds employer SG contributions to super each year without checking whether the
-annual concessional contributions cap ($30,000 per year as of 2024\u201325) has been reached.
-If a client is close to or above the cap, the projected super balance may be overstated.
-
----
-
-**15% contributions tax not deducted**
-
-Super contributions are taxed at 15% when they enter the fund (or 30% for high earners
-under Division 293). This model does not deduct contributions tax, so projected super
-balances will be slightly higher than actual after-tax figures.
-
----
-
-**Fund fees not modelled**
-
-Investment and administration fees charged by super funds and managed funds are not
-deducted. These typically range from 0.1% to 1.5% per year. To approximate the effect,
-reduce the growth rate slider by the estimated fee level.
-
----
-
-**SG rate increase not applied automatically**
-
-The Super Guarantee is legislated to rise from 11.5% to 12% on 1 July 2025. This model
-does not apply that change automatically. Set the SG rate slider to 12% in Model
-Parameters when modelling from July 2025 onwards.
-
----
-
-**Income growth not modelled**
-
-The model holds income constant at the entered value for the full projection period.
-Real-world income typically grows over a career. This means projections may understate
-long-run wealth for younger clients with significant future earnings growth.
-""")
-
-
-# ── TAB 2: Analysis ───────────────────────────────────────────────────────────
-with tab_analysis:
-
-    # ── Header ────────────────────────────────────────────────────────────────
-    st.markdown(
-        '<h1 style="color:' + NAVY + '; margin-bottom:2px;">Financial Scenario Analysis</h1>'
-        '<p style="color:' + NAVY + '; opacity:0.65; margin-top:0; font-size:11pt;">'
-        + base_client["name"] + " &nbsp;&middot;&nbsp; " + today
-        + " &nbsp;&middot;&nbsp; " + life_stage + "</p>",
-        unsafe_allow_html=True,
-    )
-    st.divider()
-
-    # ── Metric cards ──────────────────────────────────────────────────────────
-    c1, c2, c3, c4 = st.columns(4, gap="small")
-    c1.markdown(_metric_card(
-        "Net Position", fmt_currency(base_r["net_position"]),
-        "Total assets minus liabilities", base_r["net_position"] >= 0,
-    ), unsafe_allow_html=True)
-    c2.markdown(_metric_card(
-        "Annual Surplus", fmt_currency(base_r["surplus"]),
-        "Income minus expenses", base_r["surplus"] > 0,
-    ), unsafe_allow_html=True)
-    c3.markdown(_metric_card(
-        "Savings Rate", "{:.1f}%".format(base_r["savings_rate"] * 100),
-        "Target >= 10%", base_r["savings_rate"] >= 0.1,
-    ), unsafe_allow_html=True)
-    c4.markdown(_metric_card(
-        "Emergency Buffer", "{:.1f} months".format(base_r["emergency_months"]),
-        "Threshold: 2.4 months of expenses", cash >= expenses * 0.2,
-    ), unsafe_allow_html=True)
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # ── Risk badges ───────────────────────────────────────────────────────────
-    _all_flags = list(flags)
-    if depletion_warnings:
-        _all_flags += depletion_warnings
-
-    if _all_flags:
-        _badge_html = "".join(
-            '<span style="background:' + BG_NEG + '; color:' + TXT_NEG + '; '
-            'border:1px solid ' + TXT_NEG + '; border-radius:12px; '
-            'padding:4px 14px; font-size:9pt; font-weight:600; '
-            'margin-right:8px; display:inline-block; margin-bottom:4px;">&#9888; ' + f + '</span>'
-            for f in _all_flags
-        )
-        st.markdown(
-            '<div style="font-weight:600; color:' + NAVY + '; margin-bottom:6px;">'
-            'Risk Flags \u2014 Base Case</div>' + _badge_html,
-            unsafe_allow_html=True,
-        )
-    else:
-        st.markdown(
-            '<span style="color:' + TXT_POS + '; font-weight:600; font-size:10pt;">'
-            '\u2713 No risk flags identified.</span>',
-            unsafe_allow_html=True,
-        )
-    st.divider()
-
-    # ── Table 1 — Balance Sheet ───────────────────────────────────────────────
-    st.markdown('<h3 style="color:' + NAVY + '; margin-bottom:8px;">Statement of Financial Position</h3>',
-                unsafe_allow_html=True)
-
-    _bal_rows = [
-        ("Superannuation",    super_balance,                    super_balance),
-        ("Investments",       investments,                      investments),
-        ("Cash & Savings",    cash,                             cash),
-        ("TOTAL ASSETS",      base_r["total_assets"],           base_r["total_assets"]),
-        ("_div1",             None,                             None),
-        ("Mortgage / Debt",   debt,                            -debt),
-        ("TOTAL LIABILITIES", base_r["total_liabilities"],     -base_r["total_liabilities"]),
-        ("_div2",             None,                             None),
-        ("NET POSITION",      base_r["net_position"],           base_r["net_position"]),
-    ]
-    _bal_items = [r[0] for r in _bal_rows]
-    bal_disp = pd.DataFrame({"Amount": [fmt_currency(r[1]) for r in _bal_rows]}, index=_bal_items)
-    bal_num  = pd.DataFrame({"Amount": [r[2]              for r in _bal_rows]},  index=_bal_items)
-    bal_disp.index.name = "Item"
-    bal_disp = bal_disp.rename(index={"_div1": " ", "_div2": "  "})
-    bal_num  = bal_num.rename( index={"_div1": " ", "_div2": "  "})
-
-    def _style_balance(styler):
-        styler.set_caption("Statement of Financial Position \u2014 Base Case")
-        styler.set_table_styles(WORD_STYLES)
-        def cell_colour(col):
-            return [sign_style(v) for v in bal_num[col.name]]
-        styler.apply(cell_colour, axis=0)
-        def row_fmt(row):
-            n = row.name
-            if n in (" ", "  "):
-                return ["border:none; padding:3px 0; background:white; color:" + NAVY + ";"] * len(row)
-            if n == "NET POSITION":
-                return ["font-weight:bold; font-size:12pt; "
-                        "border-top:2px solid " + NAVY + "; border-bottom:2px solid " + NAVY + ";"] * len(row)
-            if n in TOTAL_ROWS:
-                return ["font-weight:bold; border-top:2px solid " + NAVY + "; "
-                        "border-bottom:2px solid " + NAVY + ";"] * len(row)
-            return [""] * len(row)
-        styler.apply(row_fmt, axis=1)
-        return styler
-
-    st.markdown(_tbl(bal_disp.style.pipe(_style_balance)), unsafe_allow_html=True)
-
-    # ── Table 2 — Scenario Comparison ────────────────────────────────────────
-    st.markdown('<h3 style="color:' + NAVY + '; margin-bottom:8px;">Scenario Comparison</h3>',
-                unsafe_allow_html=True)
-
-    CURRENCY_ROWS = ["Net Position ($)", "Annual Surplus ($)"]
-    PCT_ROWS      = ["Savings Rate (%)", "Debt-to-Assets (%)"]
-    MONTH_ROWS    = ["Emergency Buffer (months)"]
-    ALL_ROWS      = CURRENCY_ROWS + PCT_ROWS + MONTH_ROWS
-
-    def _fmt_cell(v, metric):
-        if pd.isna(v): return ""
-        if metric in CURRENCY_ROWS: return fmt_currency(v)
-        if metric in PCT_ROWS:      return "{:.1f}%".format(v)
-        return "{:.1f} months".format(v)
-
-    def _sc_row(r):
-        return [
-            r["net_position"], r["surplus"],
-            r["savings_rate"] * 100, r["debt_to_assets"] * 100,
-            r["emergency_months"],
-        ]
-
-    _comp_data = {"Base Case": _sc_row(base_r), s1_lbl: _sc_row(s1_r), s2_lbl: _sc_row(s2_r)}
-    for _ex in extra_scenarios_computed:
-        _comp_data[_ex["label"]] = _sc_row(_ex["results"])
-
-    comp_num = pd.DataFrame(_comp_data, index=ALL_ROWS)
-    comp_num.index.name = "Metric"
-
-    comp_fmt = comp_num.copy().astype(object)
-    for _m in comp_num.index:
-        for _col in comp_num.columns:
-            comp_fmt.loc[_m, _col] = _fmt_cell(comp_num.loc[_m, _col], _m)
-
-    def _style_comparison(styler):
-        styler.set_caption("Financial Scenario Comparison")
-        styler.set_table_styles(WORD_STYLES)
-        def cell_colour(col):
-            return [sign_style(v) for v in comp_num[col.name]]
-        styler.apply(cell_colour, axis=0)
-        return styler
-
-    st.markdown(_tbl(comp_fmt.style.pipe(_style_comparison)), unsafe_allow_html=True)
-
-    _all_scenario_flags = [(s1_lbl, s1_out), (s2_lbl, s2_out)]
-    for _ex in extra_scenarios_computed:
-        _all_scenario_flags.append((_ex["label"], {"risk_summary": _ex["risk_summary"]}))
-    for _lbl, _out in _all_scenario_flags:
-        _fl = _out["risk_summary"]
-        if _fl:
-            st.markdown(
-                '<span style="font-size:9pt; color:' + NAVY + ';">&#9888; <strong>'
-                + _lbl + '</strong>: ' + ", ".join(_fl) + '</span>',
-                unsafe_allow_html=True,
-            )
-
-    st.divider()
-
-    # ── Charts ────────────────────────────────────────────────────────────────
-    st.markdown('<h3 style="color:' + NAVY + '; margin-bottom:8px;">Scenario Analysis Charts</h3>',
-                unsafe_allow_html=True)
-    charts_fig, charts_b64 = make_scenario_charts(base_r, s1_r, s2_r, base_client, s1_lbl, s2_lbl)
-    st.pyplot(charts_fig)
-    plt.close(charts_fig)
-
-    # ── Projection chart ──────────────────────────────────────────────────────
-    _drawdown_note = " (Drawdown Mode)" if is_retirement else ""
-    st.markdown(
-        '<h3 style="color:' + NAVY + '; margin-bottom:8px;">'
-        + str(_proj_years) + "-Year Wealth Projection" + _drawdown_note + "</h3>",
-        unsafe_allow_html=True,
-    )
-    if st.session_state["inflation_adj"]:
-        st.caption("Returns shown in real terms (inflation-adjusted at \u22122.5% p.a.)")
-
-    _extra_proj_args = [(e["proj"], e["label"], e["color"]) for e in extra_scenarios_computed]
-    proj_fig, proj_b64 = make_projection_chart(
-        base_proj, s1_proj, s2_proj, base_client["name"],
-        s1_lbl, s2_lbl, _proj_years, _extra_proj_args,
-    )
-    st.pyplot(proj_fig)
-    plt.close(proj_fig)
-
-    if depletion_warnings:
-        for _w in depletion_warnings:
-            st.markdown(
-                '<span style="background:' + BG_NEG + '; color:' + TXT_NEG + '; '
-                'border:1px solid ' + TXT_NEG + '; border-radius:6px; '
-                'padding:6px 14px; font-size:9pt; font-weight:600; '
-                'display:inline-block; margin-top:4px;">'
-                '&#9888; ' + _w + '</span>',
-                unsafe_allow_html=True,
-            )
-
-    # ── Table 3 — Milestones ──────────────────────────────────────────────────
-    st.markdown(
-        '<h3 style="color:' + NAVY + '; margin-bottom:8px;">'
-        'Projected Net Worth \u2014 Milestones</h3>',
-        unsafe_allow_html=True,
-    )
-
-    _milestones = list(range(0, _proj_years + 1, 5))
-    if _milestones[-1] != _proj_years:
-        _milestones.append(_proj_years)
-
-    _proj_data = {
-        "Base Case ($)": [base_proj.loc[y, "Net Worth"] for y in _milestones],
-        s1_lbl + " ($)": [s1_proj.loc[y,   "Net Worth"] for y in _milestones],
-        s2_lbl + " ($)": [s2_proj.loc[y,   "Net Worth"] for y in _milestones],
+    mode = st.radio("Client mode", ["New client","Sarah & Daniel (demo)"], horizontal=True)
+    demo_mode = mode == "Sarah & Daniel (demo)"
+    st.markdown("---")
+
+    PRESETS = {
+        "Sarah & Daniel":  dict(income=160000,expenses=95000,super_balance=120000,investments=40000,cash=15000,debt=420000),
+        "Young professional": dict(income=90000,expenses=60000,super_balance=25000,investments=5000,cash=8000,debt=0),
+        "Pre-retirement couple": dict(income=200000,expenses=110000,super_balance=450000,investments=120000,cash=40000,debt=150000),
+        "First home buyer": dict(income=110000,expenses=75000,super_balance=45000,investments=10000,cash=30000,debt=550000),
+        "Custom": None,
     }
-    for _ex in extra_scenarios_computed:
-        _proj_data[_ex["label"] + " ($)"] = [_ex["proj"].loc[y, "Net Worth"] for y in _milestones]
+    if not demo_mode:
+        preset = st.selectbox("Quick preset", list(PRESETS.keys()))
+        p = PRESETS[preset]
+    else:
+        p = DEMO
 
-    proj_num = pd.DataFrame(_proj_data, index=["Year {}".format(y) for y in _milestones])
-    proj_num.index.name = "Year"
+    client_name = st.text_input("Client name", value=DEMO["name"] if demo_mode else "New Client", disabled=demo_mode)
 
-    def _style_milestones(styler):
-        styler.set_caption("Projected Net Worth \u2014 Milestones")
-        styler.set_table_styles(WORD_STYLES)
-        styler.format(fmt_currency)
-        styler.map(sign_style)
-        return styler
+    st.markdown("<div style='font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#aaa;margin:8px 0 4px'>Income & Expenses</div>", unsafe_allow_html=True)
+    income   = st.number_input("Income ($)",   min_value=0,step=5000,  value=p["income"]        if p else 160000, disabled=demo_mode)
+    expenses = st.number_input("Expenses ($)", min_value=0,step=1000,  value=p["expenses"]      if p else 95000,  disabled=demo_mode)
 
-    st.markdown(_tbl(proj_num.style.pipe(_style_milestones)), unsafe_allow_html=True)
-    st.divider()
+    st.markdown("<div style='font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#aaa;margin:8px 0 4px'>Assets</div>", unsafe_allow_html=True)
+    super_bal = st.number_input("Superannuation ($)", min_value=0,step=5000, value=p["super_balance"] if p else 120000, disabled=demo_mode)
+    invest    = st.number_input("Investments ($)",    min_value=0,step=5000, value=p["investments"]   if p else 40000,  disabled=demo_mode)
+    cash      = st.number_input("Cash & savings ($)", min_value=0,step=1000, value=p["cash"]          if p else 15000,  disabled=demo_mode)
 
-    # ── Download report ───────────────────────────────────────────────────────
-    html_report = build_html_report(
-        client_name=base_client["name"],
-        today=today,
-        base_r=base_r,
-        base_client=base_client,
-        flags=flags,
-        bal_html=bal_disp.style.pipe(_style_balance).to_html(),
-        comp_html=comp_fmt.style.pipe(_style_comparison).to_html(),
-        milestone_html=proj_num.style.pipe(_style_milestones).to_html(),
-        charts_b64=charts_b64,
-        proj_b64=proj_b64,
-        s1_lbl=s1_lbl,
-        s2_lbl=s2_lbl,
-    )
-    _safe_name = base_client["name"].replace(" ", "_").replace("&", "and")
-    st.download_button(
-        label="\u2b07  Download HTML Report",
-        data=html_report.encode("utf-8"),
-        file_name="financial_report_{}.html".format(_safe_name),
-        mime="text/html",
-    )
+    st.markdown("<div style='font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#aaa;margin:8px 0 4px'>Liabilities</div>", unsafe_allow_html=True)
+    debt = st.number_input("Mortgage / debt ($)", min_value=0,step=5000, value=p["debt"] if p else 420000, disabled=demo_mode)
 
-    # ── Footnote ──────────────────────────────────────────────────────────────
-    _infl_note = " Returns shown inflation-adjusted (\u22122.5% p.a.)." if st.session_state["inflation_adj"] else ""
-    st.markdown(
-        '<p style="font-size:9pt; color:' + NAVY + '; opacity:0.6; margin-top:1rem;">'
-        '<strong>Model assumptions</strong> \u2014 '
-        'Growth rate: {:.1f}% p.a. | '.format(st.session_state["growth_rate_param"])
-        + 'SG rate: {:.1f}% p.a. | '.format(st.session_state["sg_rate_param"])
-        + 'Annual debt repayment: {} | '.format(fmt_currency(st.session_state["debt_repayment_param"]))
-        + 'Projection: {} years | '.format(_proj_years)
-        + 'Surplus above repayment reinvested into portfolio | '
-        'Income and expenses held constant in real terms.'
-        + _infl_note
-        + ' Projections are illustrative only and do not constitute financial advice.'
-        '</p>',
-        unsafe_allow_html=True,
-    )
+    with st.expander("Model parameters"):
+        gr  = st.slider("Growth rate (% p.a.)", 1.0,15.0,7.0,0.5) / 100
+        sg  = st.slider("SG rate (%)", 5.0,15.0,11.5,0.5) / 100
+        rep = st.slider("Annual debt repayment ($)", 0,100000,20000,1000)
+        yrs = st.slider("Projection years", 5,40,20,5)
+
+    st.markdown("---")
+    st.markdown("<div style='font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#aaa;margin:8px 0 4px'>Scenario 1</div>", unsafe_allow_html=True)
+    s1_type = st.selectbox("Strategy", ["Income Improvement","Debt Reduction","Super Boost","Custom"], key="s1t")
+    if s1_type=="Income Improvement":
+        s1c = {"income": st.number_input("S1 income ($)",value=180000,step=5000,key="s1i"), "expenses": st.number_input("S1 expenses ($)",value=90000,step=1000,key="s1e")}
+    elif s1_type=="Debt Reduction":
+        s1c = {"debt": st.number_input("S1 debt ($)",value=350000,step=5000,key="s1d"), "cash": st.number_input("S1 cash ($)",value=10000,step=1000,key="s1c")}
+    elif s1_type=="Super Boost":
+        s1c = {"super_balance": st.number_input("S1 super ($)",value=int(super_bal*1.2),step=5000,key="s1s")}
+    else:
+        s1c = {"income":st.number_input("S1 income ($)",value=income,step=5000,key="s1ci"),
+               "expenses":st.number_input("S1 expenses ($)",value=expenses,step=1000,key="s1ce"),
+               "debt":st.number_input("S1 debt ($)",value=debt,step=5000,key="s1cd"),
+               "cash":st.number_input("S1 cash ($)",value=cash,step=1000,key="s1cc")}
+
+    st.markdown("<div style='font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#aaa;margin:8px 0 4px'>Scenario 2</div>", unsafe_allow_html=True)
+    s2_type = st.selectbox("Strategy ", ["Debt Reduction","Income Improvement","Super Boost","Custom"], key="s2t")
+    if s2_type=="Debt Reduction":
+        s2c = {"debt": st.number_input("S2 debt ($)",value=350000,step=5000,key="s2d"), "cash": st.number_input("S2 cash ($)",value=10000,step=1000,key="s2c")}
+    elif s2_type=="Income Improvement":
+        s2c = {"income": st.number_input("S2 income ($)",value=180000,step=5000,key="s2i"), "expenses": st.number_input("S2 expenses ($)",value=90000,step=1000,key="s2e")}
+    elif s2_type=="Super Boost":
+        s2c = {"super_balance": st.number_input("S2 super ($)",value=int(super_bal*1.2),step=5000,key="s2s")}
+    else:
+        s2c = {"income":st.number_input("S2 income ($)",value=income,step=5000,key="s2ci"),
+               "expenses":st.number_input("S2 expenses ($)",value=expenses,step=1000,key="s2ce"),
+               "debt":st.number_input("S2 debt ($)",value=debt,step=5000,key="s2cd"),
+               "cash":st.number_input("S2 cash ($)",value=cash,step=1000,key="s2cc")}
+
+    st.markdown("---")
+    if "extra_scenarios" not in st.session_state:
+        st.session_state.extra_scenarios = []
+    if st.button("+ Add scenario"):
+        st.session_state.extra_scenarios.append({"name":f"Scenario {len(st.session_state.extra_scenarios)+3}","type":"Custom","changes":{}})
+    extras = []
+    for idx, es in enumerate(st.session_state.extra_scenarios):
+        st.markdown(f"<div style='font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#aaa;margin:8px 0 4px'>Scenario {idx+3}</div>", unsafe_allow_html=True)
+        ename = st.text_input("Name", value=es["name"], key=f"en{idx}")
+        etype = st.selectbox("Strategy  ", ["Custom","Income Improvement","Debt Reduction","Super Boost"], key=f"et{idx}")
+        if etype=="Income Improvement":
+            ec={"income":st.number_input("Income ($)",value=income,step=5000,key=f"ei{idx}"),"expenses":st.number_input("Expenses ($)",value=expenses,step=1000,key=f"ee{idx}")}
+        elif etype=="Debt Reduction":
+            ec={"debt":st.number_input("Debt ($)",value=debt,step=5000,key=f"ed{idx}"),"cash":st.number_input("Cash ($)",value=cash,step=1000,key=f"ec{idx}")}
+        elif etype=="Super Boost":
+            ec={"super_balance":st.number_input("Super ($)",value=int(super_bal*1.2),step=5000,key=f"es{idx}")}
+        else:
+            ec={"income":st.number_input("Income ($) ",value=income,step=5000,key=f"eci{idx}"),
+                "expenses":st.number_input("Expenses ($) ",value=expenses,step=1000,key=f"ece{idx}"),
+                "debt":st.number_input("Debt ($) ",value=debt,step=5000,key=f"ecd{idx}"),
+                "cash":st.number_input("Cash ($) ",value=cash,step=1000,key=f"ecc{idx}")}
+        if st.button("Remove", key=f"rm{idx}"):
+            st.session_state.extra_scenarios.pop(idx); st.rerun()
+        extras.append(create_scenario({"name":client_name,"income":income,"expenses":expenses,
+            "super_balance":super_bal,"investments":invest,"cash":cash,"debt":debt}, ec, name=ename))
+
+# ── Run model ────────────────────────────────────────────────────
+base_client = dict(name=client_name,income=income,expenses=expenses,
+    super_balance=super_bal,investments=invest,cash=cash,debt=debt)
+s1 = create_scenario(base_client, s1c, name=f"Scenario 1 — {s1_type}")
+s2 = create_scenario(base_client, s2c, name=f"Scenario 2 — {s2_type}")
+bo = run_model(base_client); br = bo["results"]
+s1o= run_model(s1);          s1r= s1o["results"]
+s2o= run_model(s2);          s2r= s2o["results"]
+bp = project_wealth(base_client,yrs,gr,sg,rep)
+s1p= project_wealth(s1,yrs,gr,sg,rep)
+s2p= project_wealth(s2,yrs,gr,sg,rep)
+extra_outputs  = [(e, run_model(e), project_wealth(e,yrs,gr,sg,rep)) for e in extras]
+all_scenarios  = [(f"Scenario 1 — {s1_type}",s1r,s1p,S1_COLOR)] + \
+                 [(f"Scenario 2 — {s2_type}",s2r,s2p,TEAL)] + \
+                 [(e["scenario_name"],eo["results"],ep,EXTRA_COLORS[i%len(EXTRA_COLORS)]) for i,(e,eo,ep) in enumerate(extra_outputs)]
+
+# ── Header ───────────────────────────────────────────────────────
+if demo_mode:
+    st.markdown('<div class="demo-banner">Viewing Sarah &amp; Daniel demonstration case — inputs are locked. Switch to New Client to enter your own figures.</div>', unsafe_allow_html=True)
+
+st.markdown(f"""
+<div class="report-header">
+  <h1>Financial Scenario Planner</h1>
+  <p>{client_name} &nbsp;·&nbsp; {date.today().strftime('%d %B %Y')} &nbsp;·&nbsp; Australian accumulation phase model</p>
+</div>""", unsafe_allow_html=True)
+
+# ── Tabs ─────────────────────────────────────────────────────────
+t_about, t_dash, t_scen, t_shock, t_proj, t_leg, t_report = st.tabs([
+    "About", "Client Dashboard", "Scenario Analysis",
+    "Shock Analysis", "Projection", "Legislation", "Report"])
+
+# ════════════════════════════════════════════════════════════════
+# ABOUT TAB
+# ════════════════════════════════════════════════════════════════
+with t_about:
+    st.markdown("### Financial Scenario Planner — Australian Edition")
+    st.caption("Illustration tool for financial planning professionals · Not financial advice")
+
+    with st.expander("What this tool is and why it was built", expanded=True):
+        st.markdown("""
+This tool models the financial journey of an Australian client across three phases:
+
+- **Accumulation** — building wealth while working
+- **Pre-retirement** — checking readiness to stop working *(coming soon)*
+- **Retirement drawdown** — managing drawdown of accumulated assets *(coming soon)*
+
+It was built because financial planning concepts are often explained in isolation.
+This tool shows how phases connect — how decisions made at 35 compound into outcomes at 65.
+
+**This is an illustration tool.** It does not replace a Statement of Advice, licensed financial
+advice, or superannuation fund projections. All outputs are indicative only.
+
+**Sarah and Daniel are a locked demonstration case.** Their values cannot be changed.
+They illustrate a typical Australian couple in the accumulation phase.
+All other client inputs are fully editable via the sidebar.
+        """)
+
+    with st.expander("How to use this tool"):
+        st.markdown("""
+1. **Select client mode** in the sidebar — New Client or Sarah & Daniel demo
+2. **Enter the client's details** — all inputs are whole dollar amounts
+3. **All outputs update automatically** — no run button needed
+4. **Green cells** = positive or healthy · **Red cells** = negative or flagged
+5. **Compare scenarios** using the strategy dropdowns in the sidebar
+6. **Add extra scenarios** with the + Add Scenario button
+7. **Adjust model parameters** in the expander — growth rate, SG rate, repayment, years
+8. **Run shock analysis** in the Shock Analysis tab
+9. **Download report** from the Report tab
+        """)
+
+    with st.expander("The three life phases — accumulation, pre-retirement, retirement"):
+        st.markdown("""
+**ACCUMULATION PHASE** *(currently modelled)*
+
+Client is working and building wealth. Each year:
+
+| Component | Formula |
+|---|---|
+| Super (year end) | Prior balance × 1.07 + income × SG rate |
+| Portfolio (year end) | Prior balance × 1.07 + reinvested surplus |
+| Reinvested surplus | Income − expenses − debt repayment |
+| Debt (year end) | Prior balance − repayment (minimum zero) |
+| Net worth | Super + portfolio + cash − debt |
+
+When debt reaches zero the repayment amount adds to reinvested surplus and accelerates growth.
+This is why projection lines steepen in later years.
+
+---
+
+**PRE-RETIREMENT PHASE** *(coming soon)*
+
+Client is still working but retirement is within 15 years. Readiness check added on top of accumulation.
+
+Target super at retirement = desired income ÷ 4%
+*(Example: $80,000 target ÷ 0.04 = $2,000,000 needed)*
+
+The 4% is the internationally recognised safe withdrawal rate — indicative only, not a guarantee.
+
+---
+
+**RETIREMENT DRAWDOWN PHASE** *(coming soon)*
+
+Client has stopped working. Model flips from accumulation to drawdown.
+
+Each year: Assets × 1.07 − income drawn. Model runs to age 90 or asset depletion, whichever first.
+
+**IMPORTANT:** Age Pension is not modelled. Australian clients may be eligible from age 67.
+This must be assessed separately via Services Australia.
+        """)
+
+    with st.expander("Risk flag thresholds — exact triggers"):
+        st.markdown("""
+| Flag | Triggers when | Planner should consider |
+|---|---|---|
+| Low savings rate | Surplus ÷ income below 10% | Expense review, income strategy, debt consolidation |
+| Low emergency buffer | Cash below expenses × 20% (~2.4 months) | Cash flow timing, liquidity risk, offset accounts |
+| High leverage | Debt above total assets × 70% | LVR, serviceability buffer, rate sensitivity |
+| Under-funded super | Super balance below annual income | Age context, salary sacrifice, catch-up rules |
+
+These are planning benchmarks — they flag a condition worth discussing, not a financial emergency.
+        """)
+
+    with st.expander("How to enter a new client"):
+        st.markdown("""
+Sarah and Daniel are locked and cannot be edited. Switch to **New Client** in the sidebar.
+
+**Input checklist:**
+- Use gross annual income figures
+- Include all household expenses including discretionary
+- Include all debt not just primary mortgage
+- Cross-check super balance against member statement
+- Use actual P&I repayment for debt repayment field
+
+**Adjust growth rate per risk profile:**
+
+| Profile | Growth rate to use |
+|---|---|
+| Conservative | 5% |
+| Balanced (default) | 7% |
+| Growth | 8–9% |
+        """)
+
+# ════════════════════════════════════════════════════════════════
+# CLIENT DASHBOARD
+# ════════════════════════════════════════════════════════════════
+with t_dash:
+    em = br["emergency_months"]; sr = br["savings_rate"]
+    def mc(label,val,sub,pos):
+        cls = "pos" if pos else "neg"
+        return f'<div class="metric-card"><div class="metric-label">{label}</div><div class="metric-value {cls}">{val}</div><div class="metric-sub">{sub}</div></div>'
+    cards = '<div class="metric-row">'
+    cards += mc("Net position",   fmt(br["net_position"]),  "Assets minus liabilities",        br["net_position"]>0)
+    cards += mc("Annual surplus", fmt(br["surplus"]),        "Income minus expenses",            br["surplus"]>0)
+    cards += mc("Savings rate",   f"{sr*100:.1f}%",          "⚠ Below 10%" if sr<0.1 else "Healthy", sr>=0.1)
+    cards += mc("Emergency buffer",f"{em:.1f} months",       "⚠ Below minimum" if em<3 else "Adequate", em>=3)
+    cards += '</div>'
+    st.markdown(cards, unsafe_allow_html=True)
+
+    flags = bo["risk_flags"]
+    badges = "".join(f'<span class="badge badge-risk">⚠ {f}</span>' for f in flags) if flags else '<span class="badge badge-ok">✓ No critical risk flags</span>'
+    st.markdown(f"<div style='margin-bottom:1.2rem'>{badges}</div>", unsafe_allow_html=True)
+
+    st.markdown("**Statement of financial position — base case**")
+    bs_rows = [
+        ("Superannuation",    super_bal,              super_bal,  False),
+        ("Investments",       invest,                 invest,     False),
+        ("Cash & Savings",    cash,                   cash,       False),
+        ("TOTAL ASSETS",      br["total_assets"],     br["total_assets"], True),
+        (None,None,None,False),
+        ("Mortgage / Debt",   debt,                  -debt,      False),
+        ("TOTAL LIABILITIES", debt,                  -debt,      True),
+        (None,None,None,False),
+        ("NET POSITION",      br["net_position"],     br["net_position"], True),
+    ]
+    html = '<table class="word-table"><thead><tr><th>Item</th><th>Amount</th></tr></thead><tbody>'
+    for label,dv,nv,tot in bs_rows:
+        if label is None:
+            html += '<tr class="divider"><td colspan="2"></td></tr>'; continue
+        html += f'<tr class="{"total" if tot else ""}"><td>{label}</td><td class="{cc(nv)}">{fmt(dv)}</td></tr>'
+    html += '</tbody></table>'
+    st.markdown(html, unsafe_allow_html=True)
+
+# ════════════════════════════════════════════════════════════════
+# SCENARIO ANALYSIS
+# ════════════════════════════════════════════════════════════════
+with t_scen:
+    s1l = f"Scenario 1 — {s1_type}"; s2l = f"Scenario 2 — {s2_type}"
+    extra_labels = [e["scenario_name"] for e,_,_ in extra_outputs]
+    all_labels   = [s1l, s2l] + extra_labels
+    all_results  = [s1r, s2r] + [eo["results"] for _,eo,_ in extra_outputs]
+
+    comp_rows = [
+        ("Net Position ($)",          "currency", "net_position"),
+        ("Annual Surplus ($)",        "currency", "surplus"),
+        ("Savings Rate (%)",          "pct",      "savings_rate"),
+        ("Debt-to-Assets (%)",        "pct",      "debt_to_assets"),
+        ("Emergency Buffer (months)", "months",   "emergency_months"),
+    ]
+    def fmtc(v,k):
+        if k=="currency": return fmt(v)
+        if k=="pct":      return f"{v*100:.1f}%"
+        return f"{v:.1f} mo"
+
+    th = "".join(f"<th>{l}</th>" for l in ["Base Case"]+all_labels)
+    html = f'<table class="word-table"><thead><tr><th>Metric</th>{th}</tr></thead><tbody>'
+    for label,kind,key in comp_rows:
+        bv = br[key]
+        cells = f'<td class="{cc(bv) if kind=="currency" else ""}">{fmtc(bv,kind)}</td>'
+        for r in all_results:
+            v = r[key]
+            cells += f'<td class="{cc(v) if kind=="currency" else ""}">{fmtc(v,kind)}</td>'
+        html += f'<tr><td>{label}</td>{cells}</tr>'
+    html += '</tbody></table>'
+    st.markdown(html, unsafe_allow_html=True)
+    st.markdown("<div style='height:1.5rem'></div>", unsafe_allow_html=True)
+
+    col1,col2,col3 = st.columns(3)
+    colors = [NAVY,S1_COLOR,TEAL]+EXTRA_COLORS[:len(extras)]
+    lbs    = ["Base"]+[s1_type,s2_type]+[e["scenario_name"] for e in extras]
+    sur_v  = [br["surplus"],s1r["surplus"],s2r["surplus"]]+[eo["results"]["surplus"] for _,eo,_ in extra_outputs]
+    net_v  = [br["net_position"],s1r["net_position"],s2r["net_position"]]+[eo["results"]["net_position"] for _,eo,_ in extra_outputs]
+
+    with col1:
+        fig,ax=plt.subplots(figsize=(4,3.5))
+        bars=ax.bar(lbs,sur_v,color=colors[:len(lbs)],width=.5,zorder=3)
+        ax.set_title("Annual Surplus",fontweight="bold",color=NAVY,pad=8,fontsize=10)
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x,_:f"${x/1000:.0f}k"))
+        ax.set_ylim(0,max(sur_v)*1.3)
+        for b,v in zip(bars,sur_v):
+            ax.text(b.get_x()+b.get_width()/2,b.get_height()+max(sur_v)*.03,f"${v:,.0f}",ha="center",va="bottom",fontsize=7,fontweight="bold",color=NAVY)
+        plt.xticks(fontsize=8); plt.tight_layout(); st.pyplot(fig); plt.close()
+
+    with col2:
+        fig,ax=plt.subplots(figsize=(4,3.5))
+        bars=ax.bar(lbs,net_v,color=colors[:len(lbs)],width=.5,zorder=3)
+        ax.axhline(0,color="#bbb",linewidth=.8,linestyle="--")
+        ax.set_title("Net Position",fontweight="bold",color=NAVY,pad=8,fontsize=10)
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x,_:f"${x/1000:.0f}k"))
+        spread=max(abs(v) for v in net_v)
+        for b,v in zip(bars,net_v):
+            ax.text(b.get_x()+b.get_width()/2,v+spread*.05*(1 if v>=0 else -1),fmt(v),ha="center",va="bottom" if v>=0 else "top",fontsize=7,fontweight="bold",color=NAVY)
+        plt.xticks(fontsize=8); plt.tight_layout(); st.pyplot(fig); plt.close()
+
+    with col3:
+        fig,ax=plt.subplots(figsize=(4,3.5))
+        ax.pie([super_bal,invest,cash],labels=["Super","Invest","Cash"],
+               colors=[NAVY,S1_COLOR,TEAL],autopct="%1.0f%%",startangle=90,
+               wedgeprops={"linewidth":1.5,"edgecolor":"white"},textprops={"fontsize":8})
+        ax.set_title("Asset Mix\n(Base Case)",fontweight="bold",color=NAVY,pad=8,fontsize=10)
+        plt.tight_layout(); st.pyplot(fig); plt.close()
+
+# ════════════════════════════════════════════════════════════════
+# SHOCK ANALYSIS
+# ════════════════════════════════════════════════════════════════
+with t_shock:
+    st.markdown("**Adjust shock magnitudes**")
+    c1,c2 = st.columns(2)
+    with c1:
+        sh_inc = st.slider("Income reduction (%)",   5,50,20,5)
+        sh_exp = st.slider("Expense increase (%)",   5,50,20,5)
+        sh_ret = st.slider("Investment returns drop — use % p.a.",1,6,3,1)
+        sh_job = st.slider("Job loss (months)",      1,24,6,1)
+    with c2:
+        sh_rate= st.slider("Interest rate rise (%)", 1,5,2,1)
+        sh_sup = st.slider("Super paused (years)",   1,10,3,1)
+        sh_dbt = st.slider("Debt increase (%)",      5,30,10,5)
+
+    base_y20 = bp.loc[min(yrs,20),"Net Worth"] if yrs>=20 else bp.iloc[-1]["Net Worth"]
+
+    def shock_nw(changes, alt_gr=None):
+        sc = create_scenario(base_client, changes)
+        return project_wealth(sc,yrs,alt_gr or gr,sg,rep).iloc[-1]["Net Worth"]
+
+    shocks = [
+        (f"Income −{sh_inc}%",     shock_nw({"income":int(income*(1-sh_inc/100))})),
+        (f"Expenses +{sh_exp}%",   shock_nw({"expenses":int(expenses*(1+sh_exp/100))})),
+        (f"Returns drop to {sh_ret}%", shock_nw({}, alt_gr=sh_ret/100)),
+        (f"Job loss {sh_job} mo",  shock_nw({"income":int(income*(1-sh_job/12))})),
+        (f"Rate rise +{sh_rate}%", shock_nw({"expenses":expenses+int(debt*sh_rate/100)})),
+        (f"Super paused {sh_sup}y",shock_nw({"super_balance":max(0,super_bal-int(income*sg*sh_sup))})),
+        (f"Debt +{sh_dbt}%",       shock_nw({"debt":int(debt*(1+sh_dbt/100))})),
+    ]
+    deltas = [(label, nw-base_y20) for label,nw in shocks]
+    deltas.sort(key=lambda x:x[1])
+
+    fig,ax=plt.subplots(figsize=(10,4))
+    labels_s=[d[0] for d in deltas]; vals_s=[d[1] for d in deltas]
+    bar_colors=[BG_NEG if v<0 else BG_POS for v in vals_s]
+    bar_edge  =[TXT_NEG if v<0 else TXT_POS for v in vals_s]
+    bars=ax.barh(labels_s,vals_s,color=bar_colors,edgecolor=bar_edge,linewidth=1,zorder=3)
+    ax.axvline(0,color="#bbb",linewidth=.8)
+    ax.set_title(f"Impact on year {min(yrs,20)} net worth vs base case",fontweight="bold",color=NAVY,pad=10)
+    ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x,_:fmt(x)))
+    for bar,v in zip(bars,vals_s):
+        ax.text(v+(max(abs(v) for v in vals_s)*.02)*(1 if v>=0 else -1),
+                bar.get_y()+bar.get_height()/2,fmt(v),
+                va="center",ha="left" if v>=0 else "right",fontsize=9,fontweight="bold",
+                color=TXT_POS if v>=0 else TXT_NEG)
+    plt.tight_layout(); st.pyplot(fig); plt.close()
+
+    st.markdown("<div style='height:.5rem'></div>", unsafe_allow_html=True)
+    th2 = "<th>Surplus impact</th><th>Net position impact</th><th>Year 20 impact</th>"
+    html2 = f'<table class="word-table"><thead><tr><th>Shock</th>{th2}</tr></thead><tbody>'
+    for label,nw in shocks:
+        sc = create_scenario(base_client, {})
+        if "Income" in label:     sc = create_scenario(base_client,{"income":int(income*(1-sh_inc/100))})
+        elif "Expense" in label:  sc = create_scenario(base_client,{"expenses":int(expenses*(1+sh_exp/100))})
+        elif "Debt +" in label:   sc = create_scenario(base_client,{"debt":int(debt*(1+sh_dbt/100))})
+        sr2  = calculate_financials(sc)
+        ds   = sr2["surplus"] - br["surplus"]
+        dn   = sr2["net_position"] - br["net_position"]
+        dy20 = nw - base_y20
+        html2 += f'<tr><td>{label}</td><td class="{cc(ds)}">{fmt(ds)}</td><td class="{cc(dn)}">{fmt(dn)}</td><td class="{cc(dy20)}">{fmt(dy20)}</td></tr>'
+    html2 += '</tbody></table>'
+    st.markdown(html2, unsafe_allow_html=True)
+
+# ════════════════════════════════════════════════════════════════
+# PROJECTION
+# ════════════════════════════════════════════════════════════════
+with t_proj:
+    fig,ax=plt.subplots(figsize=(11,5))
+    ax.plot(bp.index,bp["Net Worth"]/1e6,color=NAVY,linewidth=2.5,label="Base Case",zorder=3)
+    for label,r,proj,clr in all_scenarios:
+        ls = "--" if "Income" in label else ":" if "Debt" in label else "-."
+        ax.plot(proj.index,proj["Net Worth"]/1e6,color=clr,linewidth=2,linestyle=ls,label=label,zorder=3)
+    ax.axhline(0,color="#ddd",linewidth=1)
+    ax.fill_between(bp.index,0,bp["Net Worth"]/1e6,where=bp["Net Worth"]>0,alpha=.05,color=NAVY)
+    last_yr = bp.index[-1]
+    for proj,clr in [(bp,NAVY)]+[(p,c) for _,_,p,c in all_scenarios]:
+        v = proj.iloc[-1]["Net Worth"]
+        ax.annotate(f"  ${v/1e6:.2f}M",xy=(last_yr,v/1e6),fontsize=9,fontweight="bold",color=clr,va="center")
+    ax.set_title(f"{yrs}-Year Net Worth Projection  —  {client_name}",fontsize=11,fontweight="bold",color=NAVY,pad=10)
+    ax.set_xlabel("Year",color=NAVY); ax.set_ylabel("Net Worth ($M)",color=NAVY)
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x,_:f"${x:.1f}M"))
+    ax.legend(framealpha=.9,fontsize=9,loc="upper left")
+    plt.tight_layout(); st.pyplot(fig); plt.close()
+
+    milestones = [y for y in [0,5,10,15,20,25,30,35,40] if y<=yrs]
+    th3 = "".join(f"<th>{l}</th>" for l in ["Base Case"]+[l for l,_,_,_ in all_scenarios])
+    html3 = f'<table class="word-table"><thead><tr><th>Year</th>{th3}</tr></thead><tbody>'
+    for y in milestones:
+        bv = bp.loc[y,"Net Worth"]
+        cells = f'<td class="{cc(bv)}">{fmt(bv)}</td>'
+        for _,_,proj,_ in all_scenarios:
+            if y in proj.index:
+                v=proj.loc[y,"Net Worth"]; cells+=f'<td class="{cc(v)}">{fmt(v)}</td>'
+            else:
+                cells+="<td>—</td>"
+        html3 += f'<tr><td>Year {y}</td>{cells}</tr>'
+    html3 += '</tbody></table>'
+    st.markdown(html3, unsafe_allow_html=True)
+
+# ════════════════════════════════════════════════════════════════
+# LEGISLATION
+# ════════════════════════════════════════════════════════════════
+with t_leg:
+    st.markdown("### Australian Legislative Parameters")
+    st.caption("Current as at 2024–25 financial year · Review annually and after Federal Budget")
+    st.warning("Always verify current rates at ato.gov.au and legislation.gov.au before use in client conversations.")
+
+    with st.expander("Superannuation Guarantee"):
+        st.markdown("""
+| | |
+|---|---|
+| **Current rate** | 11.5% (2024–25) |
+| **Rising to** | 12.0% from 1 July 2025 |
+| **In this model** | 11.5% applied throughout — does not auto-update |
+| **Action required** | Update sg_rate = 0.12 in model parameters from July 2025 |
+| **Legislative reference** | Superannuation Guarantee (Administration) Act 1992 |
+        """)
+
+    with st.expander("Contribution caps"):
+        st.markdown("""
+| Cap | Amount | Status in model |
+|---|---|---|
+| Concessional (employer + salary sacrifice + personal deductible) | $30,000 p.a. | **NOT CHECKED** — breach not flagged |
+| Non-concessional | $120,000 p.a. | **NOT MODELLED** |
+| Bring-forward rule | $360,000 over 3 years | **NOT MODELLED** |
+| Catch-up contributions (balance below $500k) | Up to 5 years carried forward | **NOT MODELLED** |
+
+**Note:** At $160,000 income the SG alone = $18,400 — leaving $11,600 before the concessional cap is breached.
+        """)
+
+    with st.expander("Preservation and access rules"):
+        st.markdown("""
+| Rule | Detail | Status in model |
+|---|---|---|
+| Preservation age | Age 60 for anyone born after 1 July 1964 | Not enforced — planner must verify |
+| Conditions of release | Retirement, terminal illness, severe financial hardship | Not modelled |
+| Transition to retirement | Income stream from preservation age while still working | Not modelled |
+        """)
+
+    with st.expander("Retirement phase"):
+        st.markdown("""
+| Rule | Detail | Status in model |
+|---|---|---|
+| Transfer Balance Cap | $1.9 million (2024–25, indexed annually) | **NOT MODELLED** |
+| Pension phase earnings tax | 0% (vs 15% in accumulation) | **NOT MODELLED** |
+| Account-based pension | Minimum drawdown rates apply from age 60 | **NOT MODELLED** |
+        """)
+
+    with st.expander("Age Pension — NOT MODELLED"):
+        st.error("Age Pension is not included in this model. This significantly affects retirement sustainability for many Australian clients.")
+        st.markdown("""
+| | |
+|---|---|
+| **Eligibility age** | 67 (born after 1 January 1957) |
+| **Assets test** | Homeowners: $314,000 (single) / $470,000 (couple) full pension threshold |
+| **Income test** | $204 p.f. (single) / $360 p.f. (couple) free area |
+| **Action** | Assess separately via [Services Australia](https://www.servicesaustralia.gov.au) |
+        """)
+
+    with st.expander("Tax on super contributions"):
+        st.markdown("""
+| | |
+|---|---|
+| **Standard rate** | 15% on concessional contributions |
+| **High income** | 30% for income above $250,000 (Division 293) |
+| **Earnings tax** | 15% on investment earnings in accumulation phase |
+| **In this model** | **NOT DEDUCTED** — contributions treated as gross |
+| **Impact** | Actual super growth will be lower than modelled, especially for high income clients |
+        """)
+
+    with st.expander("What IS and IS NOT modelled"):
+        col1,col2=st.columns(2)
+        with col1:
+            st.markdown("**✓ Is modelled**")
+            st.markdown("""
+- SG contributions at 11.5%
+- 7% investment growth (net of fees assumption)
+- Annual principal debt repayment
+- Accumulation compounding over time
+- Basic risk flag thresholds
+            """)
+        with col2:
+            st.markdown("**✗ Not modelled**")
+            st.markdown("""
+- Contributions tax (15%)
+- Division 293 tax
+- Fund management fees explicitly
+- Concessional cap breach
+- Catch-up contributions
+- Age Pension
+- Transfer Balance Cap
+- Pension phase tax treatment
+- Inflation
+- Income growth
+- Sequence of returns risk
+- Interest rate changes on mortgage
+- SG rise to 12% (July 2025)
+            """)
+
+    with st.expander("Review triggers — when to update this tool"):
+        st.markdown("""
+| Trigger | When |
+|---|---|
+| Federal Budget | May annually |
+| SG rate rise to 12% | **1 July 2025** |
+| Contribution cap indexation | Check each July |
+| Transfer Balance Cap indexation | Check each July |
+| Any superannuation legislation change | As announced |
+        """)
+
+# ════════════════════════════════════════════════════════════════
+# REPORT
+# ════════════════════════════════════════════════════════════════
+with t_report:
+    st.markdown("**Report preview**")
+    st.markdown(f"Client: **{client_name}** · Generated: **{date.today().strftime('%d %B %Y')}** · Model: Accumulation phase · Growth rate: {gr*100:.1f}% · SG: {sg*100:.1f}% · Repayment: ${rep:,} p.a.")
+
+    disclaimer = """This report has been prepared using the Financial Scenario Planner, an illustration tool for use by Australian financial planning professionals. All projections are indicative only and based on the assumptions stated above. This report does not constitute financial advice and should not be relied upon as such. Past performance is not indicative of future results. Legislative parameters are current as at 2024–25 and are subject to change. Recipients should obtain professional financial advice before making any financial decisions."""
+
+    report_html = f"""<html><head><meta charset='utf-8'>
+<style>body{{font-family:sans-serif;color:#1B2E4B;padding:40px;}}
+h1{{font-size:22px;}}h2{{font-size:15px;border-bottom:2px solid #1B2E4B;padding-bottom:5px;margin-top:28px;}}
+table{{width:100%;border-collapse:collapse;margin-bottom:20px;font-size:12px;}}
+th{{background:#F2F2F2;border-top:2px solid #1B2E4B;border-bottom:2px solid #1B2E4B;padding:7px 11px;text-align:right;}}
+th:first-child{{text-align:left;}}td{{border-bottom:.5px solid #E5E7EB;padding:7px 11px;text-align:right;}}
+td:first-child{{text-align:left;}}.pos{{background:#E2F0D9;color:#006100;font-weight:500;}}
+.neg{{background:#FCE4D6;color:#C00000;font-weight:500;}}.disc{{font-size:11px;color:#888;line-height:1.7;margin-top:28px;border-top:1px solid #eee;padding-top:14px;}}
+</style></head><body>
+<h1>Financial Scenario Analysis</h1>
+<p><strong>{client_name}</strong> · {date.today().strftime('%d %B %Y')}</p>
+<p style='font-size:12px;color:#888'>Growth rate: {gr*100:.1f}% · SG rate: {sg*100:.1f}% · Annual repayment: ${rep:,} · Projection: {yrs} years</p>
+<h2>Balance Sheet — Base Case</h2>{html}
+<h2>Scenario Comparison</h2>{html2 if 'html2' in dir() else ''}
+<h2>Projection Milestones</h2>{html3}
+<p class='disc'>{disclaimer}</p>
+</body></html>"""
+
+    st.download_button("⬇ Download HTML report", data=report_html.encode("utf-8"),
+        file_name=f"Financial_Report_{client_name.replace(' ','_')}_{date.today()}.html",
+        mime="text/html")
+
+    if st.button("Copy disclaimer text"):
+        st.code(disclaimer)
+        st.info("Select all text above and copy.")
+
+    st.markdown("---")
+    st.markdown(f"<div style='font-size:11px;color:#888;line-height:1.7'>{disclaimer}</div>", unsafe_allow_html=True)
