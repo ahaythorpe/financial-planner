@@ -391,6 +391,18 @@ with t_dash:
         html += f'<tr class="{"total" if tot else ""}"><td>{label}</td><td class="{cc(nv)}">{fmt(dv)}</td></tr>'
     html += '</tbody></table>'
     st.markdown(html, unsafe_allow_html=True)
+    interp = []
+    if br["savings_rate"] < 0.1:
+        interp.append("Savings rate is below 10% — limited capacity to build wealth or absorb unexpected costs.")
+    if cash < expenses * 0.2:
+        interp.append("Cash reserves are below 3 months of expenses — building this buffer is typically the first planning priority.")
+    if debt > br["total_assets"] * 0.7:
+        interp.append("Debt exceeds 70% of total assets — normal at accumulation stage, but worth monitoring as interest rates change.")
+    if super_bal < income:
+        interp.append("Superannuation is below 1× annual income — consider reviewing contribution strategy.")
+    if not interp:
+        interp.append("No immediate risk flags. The projection shows wealth building steadily over the selected horizon.")
+    st.info(" ".join(interp))
 
 # ════════════════════════════════════════════════════════════════
 # SCENARIO ANALYSIS
@@ -425,6 +437,7 @@ with t_scen:
         html += f'<tr><td>{label}</td>{cells}</tr>'
     html += '</tbody></table>'
     st.markdown(html, unsafe_allow_html=True)
+    st.caption("Green cells show the strongest outcome per metric. Use this to identify which strategy best improves cash flow versus long-term wealth and what trade-offs are involved.")
     st.markdown("<div style='height:1.5rem'></div>", unsafe_allow_html=True)
 
     col1,col2,col3 = st.columns(3)
@@ -576,6 +589,7 @@ with t_proj:
         html3 += f'<tr><td>Year {y}</td>{cells}</tr>'
     html3 += '</tbody></table>'
     st.markdown(html3, unsafe_allow_html=True)
+    st.caption(f"Projections assume consistent {gr*100:.0f}% annual returns. Real returns vary year to year. These figures illustrate the compounding effect of strategic decisions — not guaranteed outcomes. Age Pension and contributions tax are not modelled.")
 
 # ════════════════════════════════════════════════════════════════
 # LEGISLATION
