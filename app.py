@@ -349,6 +349,7 @@ Sarah and Daniel are locked and cannot be edited. Switch to **New Client** in th
 # CLIENT DASHBOARD
 # ════════════════════════════════════════════════════════════════
 with t_dash:
+    st.caption(f"Assumptions: {gr*100:.1f}% growth · {sg*100:.1f}% SG · ${rep:,} repayment · {yrs} yr projection · today's dollars · Age Pension not modelled")
     if older_age >= 67:
         st.error("This client has reached retirement age (67). Retirement drawdown modelling coming soon.")
     elif older_age >= 60:
@@ -395,6 +396,7 @@ with t_dash:
 # SCENARIO ANALYSIS
 # ════════════════════════════════════════════════════════════════
 with t_scen:
+    st.caption(f"Assumptions: {gr*100:.1f}% growth · {sg*100:.1f}% SG · ${rep:,} repayment · {yrs} yr projection · today's dollars · Age Pension not modelled")
     s1l = f"Scenario 1 — {s1_type}"; s2l = f"Scenario 2 — {s2_type}"
     extra_labels = [e["scenario_name"] for e,_,_ in extra_outputs]
     all_labels   = [s1l, s2l] + extra_labels
@@ -464,6 +466,7 @@ with t_scen:
 # SHOCK ANALYSIS
 # ════════════════════════════════════════════════════════════════
 with t_shock:
+    st.caption(f"Assumptions: {gr*100:.1f}% growth · {sg*100:.1f}% SG · ${rep:,} repayment · {yrs} yr projection · today's dollars · Age Pension not modelled")
     st.markdown("**Adjust shock magnitudes**")
     c1,c2 = st.columns(2)
     with c1:
@@ -541,6 +544,7 @@ with t_shock:
 # PROJECTION
 # ════════════════════════════════════════════════════════════════
 with t_proj:
+    st.caption(f"Assumptions: {gr*100:.1f}% growth · {sg*100:.1f}% SG · ${rep:,} repayment · {yrs} yr projection · today's dollars · Age Pension not modelled")
     fig,ax=plt.subplots(figsize=(11,5))
     ax.plot(bp.index,bp["Net Worth"]/1e6,color=NAVY,linewidth=2.5,label="Base Case",zorder=3)
     for label,r,proj,clr in all_scenarios:
