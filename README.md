@@ -19,19 +19,19 @@ The app lets a financial planner enter a client's current financial position and
 
 ## How to run
 
-1. Install dependencies:
-   ```
-   pip install -r requirements.txt
-   ```
+```
+pip install -r requirements.txt
+streamlit run app.py
+```
 
-2. Launch the app:
-   ```
-   streamlit run app.py
-   ```
-
-3. Open your browser at `http://localhost:8501`
+Open your browser at `http://localhost:8501`
 
 ## Notes
 
 - All projections are illustrative only and do not constitute financial advice.
 - Default growth assumptions: 7% p.a. investment/super growth, 11.5% SG contributions, $20,000 annual debt repayment.
+
+---
+app_file: app.py
+sdk: streamlit
+sdk_version: 1.32.0
