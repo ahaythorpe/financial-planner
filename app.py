@@ -126,6 +126,9 @@ with st.sidebar:
         p = DEMO
 
     client_name = st.text_input("Client name", value=DEMO["name"] if demo_mode else "New Client", disabled=demo_mode)
+    age_1 = st.number_input("Client 1 age", min_value=18, max_value=85, value=35, step=1, disabled=demo_mode)
+    age_2 = st.number_input("Partner age (0 = no partner)", min_value=0, max_value=85, value=37, step=1, disabled=demo_mode)
+    older_age = max(age_1, age_2) if age_2 > 0 else age_1
 
     st.markdown("<div style='font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#aaa;margin:8px 0 4px'>Income & Expenses</div>", unsafe_allow_html=True)
     income   = st.number_input("Income ($)",   min_value=0,step=5000,  value=p["income"]        if p else 160000, disabled=demo_mode)
@@ -223,7 +226,7 @@ if demo_mode:
 st.markdown(f"""
 <div class="report-header">
   <h1>Financial Scenario Planner</h1>
-  <p>{client_name} &nbsp;·&nbsp; {date.today().strftime('%d %B %Y')} &nbsp;·&nbsp; Australian accumulation phase model</p>
+  <p>{client_name} &nbsp;·&nbsp; Age {age_1}/{age_2} &nbsp;·&nbsp; {date.today().strftime('%d %B %Y')} &nbsp;·&nbsp; Australian accumulation phase model</p>
 </div>""", unsafe_allow_html=True)
 
 # ── Tabs ─────────────────────────────────────────────────────────
@@ -346,6 +349,12 @@ Sarah and Daniel are locked and cannot be edited. Switch to **New Client** in th
 # CLIENT DASHBOARD
 # ════════════════════════════════════════════════════════════════
 with t_dash:
+    if older_age >= 67:
+        st.error("This client has reached retirement age (67). Retirement drawdown modelling coming soon.")
+    elif older_age >= 60:
+        st.warning("This client is approaching retirement age. Pre-retirement analysis recommended.")
+    elif older_age >= 50:
+        st.info("This client is within 15 years of retirement. Consider pre-retirement planning conversations.")
     em = br["emergency_months"]; sr = br["savings_rate"]
     def mc(label,val,sub,pos):
         cls = "pos" if pos else "neg"
