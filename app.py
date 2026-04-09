@@ -927,6 +927,9 @@ with t_scen:
         pts3.append("Small strategy differences today create large wealth divergence over 20 years.")
         st.markdown("<div style='height:1rem'></div>",unsafe_allow_html=True)
         render_insight(pts3)
+    render_insight(generate_insight("summary",
+        br,s1r,s2r,bp,s1p,s2p,s1_type,s2_type,
+        yrs,income,expenses,rep,cash,debt,super_bal))
 
 # ════════════════════════════════════════════════════════════════
 # SHOCK ANALYSIS
