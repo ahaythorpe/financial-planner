@@ -93,6 +93,20 @@ def project_wealth(c, years=20, gr=0.07, sg=0.115, rep=20000):
             debt=max(0.0,debt-rep)
     return pd.DataFrame(rows).set_index("Year")
 
+def project_balance_sheet(client, years=20, gr=0.07, sg=0.115, rep=20000):
+    sup=float(client["super_balance"]); inv=float(client["investments"])
+    cash_=float(client["cash"]); debt=float(client["debt"])
+    extra=max(0,client["income"]-client["expenses"]-rep)
+    rows=[]
+    for y in range(years+1):
+        assets=sup+inv+cash_
+        rows.append({"Year":y,"Assets":round(assets),"Liabilities":round(debt),"Net Worth":round(assets-debt)})
+        if y<years:
+            sup=sup*(1+gr)+client["income"]*sg
+            inv=inv*(1+gr)+extra
+            debt=max(0.0,debt-rep)
+    return pd.DataFrame(rows).set_index("Year")
+
 def fmt(v):
     if v is None or (isinstance(v,float) and np.isnan(v)): return ""
     return f"${v:,.0f}" if v>=0 else f"(${abs(v):,.0f})"
@@ -215,6 +229,7 @@ bp = project_wealth(base_client,yrs,gr,sg,rep)
 s1p= project_wealth(s1,yrs,gr,sg,rep)
 s2p= project_wealth(s2,yrs,gr,sg,rep)
 extra_outputs  = [(e, run_model(e), project_wealth(e,yrs,gr,sg,rep)) for e in extras]
+bs_proj = project_balance_sheet(base_client, yrs, gr, sg, rep)
 all_scenarios  = [(f"Scenario 1 — {s1_type}",s1r,s1p,S1_COLOR)] + \
                  [(f"Scenario 2 — {s2_type}",s2r,s2p,TEAL)] + \
                  [(e["scenario_name"],eo["results"],ep,EXTRA_COLORS[i%len(EXTRA_COLORS)]) for i,(e,eo,ep) in enumerate(extra_outputs)]
@@ -440,48 +455,93 @@ with t_scen:
     st.caption("Green cells show the strongest outcome per metric. Use this to identify which strategy best improves cash flow versus long-term wealth and what trade-offs are involved.")
     st.markdown("<div style='height:1.5rem'></div>", unsafe_allow_html=True)
 
-    col1,col2,col3 = st.columns(3)
-    colors = [NAVY,S1_COLOR,TEAL]+EXTRA_COLORS[:len(extras)]
-    lbs    = ["Base"]+[s1_type,s2_type]+[e["scenario_name"] for e in extras]
-    sur_v  = [br["surplus"],s1r["surplus"],s2r["surplus"]]+[eo["results"]["surplus"] for _,eo,_ in extra_outputs]
-    net_v  = [br["net_position"],s1r["net_position"],s2r["net_position"]]+[eo["results"]["net_position"] for _,eo,_ in extra_outputs]
+    # ── Row 1: Income Composition | Balance Sheet Dynamics ──────────
+    scen_clients = [base_client, s1, s2] + [e for e,_,_ in extra_outputs]
+    scen_labels  = ["Base", s1_type, s2_type] + [e["scenario_name"] for e in extras]
+    scen_colors  = [NAVY, S1_COLOR, TEAL] + EXTRA_COLORS[:len(extras)]
+    scen_projs   = [bp, s1p, s2p] + [ep for _,_,ep in extra_outputs]
 
-    with col1:
-        fig,ax=plt.subplots(figsize=(4,3.5))
-        bars=ax.bar(lbs,sur_v,color=colors[:len(lbs)],width=.5,zorder=3)
-        ax.set_title("Annual Surplus",fontweight="bold",color=NAVY,pad=8,fontsize=10)
-        ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x,_:f"${x/1000:.0f}k"))
-        ax.set_ylim(0,max(sur_v)*1.3)
-        for b,v in zip(bars,sur_v):
-            ax.text(b.get_x()+b.get_width()/2,b.get_height()+max(sur_v)*.03,f"${v:,.0f}",ha="center",va="bottom",fontsize=7,fontweight="bold",color=NAVY)
-        plt.xticks(fontsize=8); plt.tight_layout(); st.pyplot(fig); plt.close()
+    col_a, col_b = st.columns(2)
 
-    with col2:
-        fig,ax=plt.subplots(figsize=(4,3.5))
-        bar_clrs = ["#E2F0D9" if v>=0 else "#FCE4D6" for v in net_v]
-        bar_edges = ["#006100" if v>=0 else "#C00000" for v in net_v]
-        bars=ax.bar(lbs,net_v,color=bar_clrs,edgecolor=bar_edges,linewidth=1.5,width=.5,zorder=3)
-        ax.axhline(0,color="#C00000",linewidth=1,linestyle="--")
-        ax.text(len(lbs)-0.5, 0, " $0 break-even", fontsize=8, color="#C00000", va="bottom")
-        ax.set_title("Net Position",fontweight="bold",color=NAVY,pad=8,fontsize=10)
-        ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x,_:f"${x/1000:.0f}k"))
-        spread=max(abs(v) for v in net_v)
-        for b,v in zip(bars,net_v):
-            clr = "#006100" if v>=0 else "#C00000"
-            ax.text(b.get_x()+b.get_width()/2,
-                    v+spread*.05*(1 if v>=0 else -1),
-                    fmt(v),ha="center",
-                    va="bottom" if v>=0 else "top",
-                    fontsize=7,fontweight="bold",color=clr)
-        plt.xticks(fontsize=8); plt.tight_layout(); st.pyplot(fig); plt.close()
-
-    with col3:
-        fig,ax=plt.subplots(figsize=(4,3.5))
-        ax.pie([super_bal,invest,cash],labels=["Super","Invest","Cash"],
-               colors=[NAVY,S1_COLOR,TEAL],autopct="%1.0f%%",startangle=90,
-               wedgeprops={"linewidth":1.5,"edgecolor":"white"},textprops={"fontsize":8})
-        ax.set_title("Asset Mix\n(Base Case)",fontweight="bold",color=NAVY,pad=8,fontsize=10)
+    with col_a:
+        from matplotlib.patches import Patch
+        fig, ax = plt.subplots(figsize=(6, max(3, 0.8*len(scen_labels)+1.5)))
+        for i, sc in enumerate(scen_clients):
+            inc = sc["income"] if sc["income"] else 1
+            exp_pct = sc["expenses"] / inc
+            rep_pct = min(rep / inc, max(0, 1 - exp_pct))
+            sur_pct = max(0, 1 - exp_pct - rep_pct)
+            ax.barh(i, exp_pct, color="#FCE4D6", edgecolor="#C00000", linewidth=0.8, zorder=3)
+            ax.barh(i, rep_pct, left=exp_pct, color="#FFF3CD", edgecolor="#E8A838", linewidth=0.8, zorder=3)
+            ax.barh(i, sur_pct, left=exp_pct+rep_pct, color="#E2F0D9", edgecolor="#006100", linewidth=0.8, zorder=3)
+            if exp_pct > 0.08:
+                ax.text(exp_pct/2, i, f"{exp_pct*100:.0f}%", ha="center", va="center", fontsize=7, color="#C00000", fontweight="bold")
+            if rep_pct > 0.08:
+                ax.text(exp_pct+rep_pct/2, i, f"{rep_pct*100:.0f}%", ha="center", va="center", fontsize=7, color="#7a5c00", fontweight="bold")
+            if sur_pct > 0.08:
+                ax.text(exp_pct+rep_pct+sur_pct/2, i, f"{sur_pct*100:.0f}%", ha="center", va="center", fontsize=7, color="#006100", fontweight="bold")
+        ax.axvline(0.9, color=NAVY, linewidth=1, linestyle=":", zorder=4)
+        ax.text(0.905, len(scen_labels)-0.55, "10% min", fontsize=7, color=NAVY, va="top")
+        ax.set_yticks(range(len(scen_labels)))
+        ax.set_yticklabels(scen_labels, fontsize=8)
+        ax.set_xlim(0, 1.05)
+        ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x,_: f"{x*100:.0f}%"))
+        ax.set_title("Income Allocation by Scenario", fontweight="bold", color=NAVY, pad=8, fontsize=10)
+        legend_els = [Patch(facecolor="#FCE4D6", edgecolor="#C00000", label="Expenses"),
+                      Patch(facecolor="#FFF3CD", edgecolor="#E8A838", label="Debt repayment"),
+                      Patch(facecolor="#E2F0D9", edgecolor="#006100", label="Surplus")]
+        ax.legend(handles=legend_els, loc="lower center", bbox_to_anchor=(0.5,-0.18), ncol=3, fontsize=7, framealpha=0.9)
         plt.tight_layout(); st.pyplot(fig); plt.close()
+
+    with col_b:
+        fig, ax = plt.subplots(figsize=(6, 4))
+        yrs_idx = bs_proj.index
+        assets_s = bs_proj["Assets"] / 1e6
+        liab_s   = bs_proj["Liabilities"] / 1e6
+        nw_s     = bs_proj["Net Worth"] / 1e6
+        ax.fill_between(yrs_idx, 0, assets_s, alpha=0.15, color=NAVY)
+        ax.fill_between(yrs_idx, 0, liab_s,   alpha=0.15, color="#C00000")
+        ax.plot(yrs_idx, assets_s, color=NAVY,     linewidth=2,   label="Total assets")
+        ax.plot(yrs_idx, liab_s,   color="#C00000", linewidth=2,   linestyle="--", label="Total liabilities")
+        ax.plot(yrs_idx, nw_s,     color=TEAL,     linewidth=2.5, label="Net position")
+        ax.axhline(0, color="#ccc", linewidth=0.8)
+        crossover = next((y for y in yrs_idx if bs_proj.loc[y,"Net Worth"] > 0), None)
+        if crossover is not None:
+            ax.axvline(crossover, color=TEAL, linewidth=1, linestyle=":")
+            y_ann = float(nw_s.max()) * 0.18
+            ax.annotate("Net positive", xy=(crossover, 0),
+                        xytext=(crossover+max(1,yrs*0.05), y_ann),
+                        fontsize=8, color=TEAL,
+                        arrowprops=dict(arrowstyle="->", color=TEAL, lw=1))
+        ax.set_title("Balance Sheet Dynamics — Base Case", fontweight="bold", color=NAVY, pad=8, fontsize=10)
+        ax.set_xlabel("Year", color=NAVY)
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x,_: f"${x:.1f}M"))
+        ax.legend(loc="lower right", fontsize=8, framealpha=0.9)
+        plt.tight_layout(); st.pyplot(fig); plt.close()
+
+    # ── Row 2: Milestone Comparison (full width) ─────────────────
+    milestones_c = [y for y in [0,5,10,15,20] if y<=yrs]
+    n_sc = len(scen_projs)
+    bar_w = min(0.8/n_sc, 0.25)
+    x_pos = np.arange(len(milestones_c))
+    fig, ax = plt.subplots(figsize=(10, 4))
+    for i, (proj, lbl, clr) in enumerate(zip(scen_projs, scen_labels, scen_colors)):
+        vals = [proj.loc[y,"Net Worth"]/1e6 if y in proj.index else 0 for y in milestones_c]
+        offset = (i - n_sc/2 + 0.5) * bar_w
+        b3 = ax.bar(x_pos+offset, vals, width=bar_w*0.9, color=clr, label=lbl, zorder=3)
+        for bar,v in zip(b3, vals):
+            ax.text(bar.get_x()+bar.get_width()/2, bar.get_height()+0.01,
+                    f"${v:.1f}M", ha="center", va="bottom",
+                    fontsize=6.5, fontweight="bold", color=clr, rotation=40)
+    ax.set_xticks(x_pos)
+    ax.set_xticklabels([f"Year {y}" for y in milestones_c], fontsize=9)
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x,_: f"${x:.1f}M"))
+    ax.set_title("Wealth Trajectory — Key Milestones", fontweight="bold", color=NAVY, pad=10, fontsize=11)
+    ax.axhline(0, color="#ddd", linewidth=0.8)
+    ax.legend(fontsize=9, framealpha=0.9)
+    plt.tight_layout(); st.pyplot(fig); plt.close()
+
+    st.caption("Income allocation shows proportion of gross income consumed by expenses, debt repayment, and available for reinvestment. Balance sheet dynamics shows the crossover point where net worth turns positive. Milestone chart shows wealth divergence across strategies at key intervals.")
 
 # ════════════════════════════════════════════════════════════════
 # SHOCK ANALYSIS
