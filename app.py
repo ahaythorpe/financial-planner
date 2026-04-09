@@ -784,10 +784,45 @@ with t_leg:
 # REPORT
 # ════════════════════════════════════════════════════════════════
 with t_report:
+    practice_name = st.text_input(
+        "Practice name (for report header)",
+        value="[Practice Name]")
     st.markdown("**Report preview**")
     st.markdown(f"Client: **{client_name}** · Generated: **{date.today().strftime('%d %B %Y')}** · Model: Accumulation phase · Growth rate: {gr*100:.1f}% · SG: {sg*100:.1f}% · Repayment: ${rep:,} p.a.")
 
-    disclaimer = """This report has been prepared using the Financial Scenario Planner, an illustration tool for use by Australian financial planning professionals. All projections are indicative only and based on the assumptions stated above. This report does not constitute financial advice and should not be relied upon as such. Past performance is not indicative of future results. Legislative parameters are current as at 2024–25 and are subject to change. Recipients should obtain professional financial advice before making any financial decisions."""
+    disclaimer = (
+        f"This report has been prepared by {practice_name} "
+        f"using the Financial Scenario Planner "
+        f"(Version {APP_VERSION}, {APP_BUILD_DATE}). "
+        "It contains general financial information only "
+        "and does not take into account your individual "
+        "objectives, financial situation or needs. "
+        "Before acting on this information you should "
+        "consider its appropriateness having regard to "
+        "your circumstances and seek personal financial "
+        "advice from a licensed financial adviser. "
+        "Past performance is not a reliable indicator "
+        "of future performance. All projections are "
+        "based on assumptions stated in this report "
+        "and are illustrative only."
+    )
+
+    assumptions_block = (
+        f"Assumptions: Investment return {gr*100:.1f}% p.a. · "
+        f"SG rate {sg*100:.1f}% · "
+        f"Annual debt repayment ${rep:,} · "
+        f"Projection {yrs} years · "
+        "Figures in today's dollars · "
+        "Age Pension not modelled · "
+        "Contributions tax not deducted."
+    )
+
+    leg_block = (
+        f"Legislative parameters current as at "
+        f"{LEGISLATION_DATE}. Subject to change. "
+        "Verify current rates at ato.gov.au before "
+        "use in client conversations."
+    )
 
     report_html = f"""<html><head><meta charset='utf-8'>
 <style>body{{font-family:sans-serif;color:#1B2E4B;padding:40px;}}
@@ -804,6 +839,8 @@ td:first-child{{text-align:left;}}.pos{{background:#E2F0D9;color:#006100;font-we
 <h2>Balance Sheet — Base Case</h2>{html}
 <h2>Scenario Comparison</h2>{html2 if 'html2' in locals() else ''}
 <h2>Projection Milestones</h2>{html3}
+<p class='disc'>{assumptions_block}</p>
+<p class='disc'>{leg_block}</p>
 <p class='disc'>{disclaimer}</p>
 </body></html>"""
 
@@ -816,4 +853,6 @@ td:first-child{{text-align:left;}}.pos{{background:#E2F0D9;color:#006100;font-we
         st.info("Select all text above and copy.")
 
     st.markdown("---")
-    st.markdown(f"<div style='font-size:11px;color:#888;line-height:1.7'>{disclaimer}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div style='font-size:11px;color:#888;line-height:1.7'>{assumptions_block}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div style='font-size:11px;color:#888;line-height:1.7;margin-top:6px'>{leg_block}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div style='font-size:11px;color:#888;line-height:1.7;margin-top:6px'>{disclaimer}</div>", unsafe_allow_html=True)
