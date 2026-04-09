@@ -504,10 +504,22 @@ with t_shock:
     th2 = "<th>Surplus impact</th><th>Net position impact</th><th>Year 20 impact</th>"
     html2 = f'<table class="word-table"><thead><tr><th>Shock</th>{th2}</tr></thead><tbody>'
     for label,nw in shocks:
-        sc = create_scenario(base_client, {})
-        if "Income" in label:     sc = create_scenario(base_client,{"income":int(income*(1-sh_inc/100))})
-        elif "Expense" in label:  sc = create_scenario(base_client,{"expenses":int(expenses*(1+sh_exp/100))})
-        elif "Debt +" in label:   sc = create_scenario(base_client,{"debt":int(debt*(1+sh_dbt/100))})
+        if "Income" in label:
+            sc = create_scenario(base_client, {"income": int(income*(1-sh_inc/100))})
+        elif "Expense" in label:
+            sc = create_scenario(base_client, {"expenses": int(expenses*(1+sh_exp/100))})
+        elif "Returns" in label:
+            sc = base_client
+        elif "Job" in label:
+            sc = create_scenario(base_client, {"income": int(income*(1-sh_job/12))})
+        elif "Rate" in label:
+            sc = create_scenario(base_client, {"expenses": expenses+int(debt*sh_rate/100)})
+        elif "Super" in label:
+            sc = create_scenario(base_client, {"super_balance": max(0,super_bal-int(income*sg*sh_sup))})
+        elif "Debt +" in label:
+            sc = create_scenario(base_client, {"debt": int(debt*(1+sh_dbt/100))})
+        else:
+            sc = base_client
         sr2  = calculate_financials(sc)
         ds   = sr2["surplus"] - br["surplus"]
         dn   = sr2["net_position"] - br["net_position"]
@@ -685,7 +697,7 @@ td:first-child{{text-align:left;}}.pos{{background:#E2F0D9;color:#006100;font-we
 <p><strong>{client_name}</strong> · {date.today().strftime('%d %B %Y')}</p>
 <p style='font-size:12px;color:#888'>Growth rate: {gr*100:.1f}% · SG rate: {sg*100:.1f}% · Annual repayment: ${rep:,} · Projection: {yrs} years</p>
 <h2>Balance Sheet — Base Case</h2>{html}
-<h2>Scenario Comparison</h2>{html2 if 'html2' in dir() else ''}
+<h2>Scenario Comparison</h2>{html2 if 'html2' in locals() else ''}
 <h2>Projection Milestones</h2>{html3}
 <p class='disc'>{disclaimer}</p>
 </body></html>"""
