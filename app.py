@@ -5,6 +5,10 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 from datetime import date
 
+APP_VERSION      = "1.0.0"
+APP_BUILD_DATE   = "April 2026"
+LEGISLATION_DATE = "2024-25 financial year"
+
 st.set_page_config(
     page_title="Financial Scenario Planner",
     page_icon="📊",
@@ -217,6 +221,12 @@ with st.sidebar:
         extras.append(create_scenario({"name":client_name,"income":income,"expenses":expenses,
             "super_balance":super_bal,"investments":invest,"cash":cash,"debt":debt}, ec, name=ename))
 
+    st.markdown("---")
+    st.caption(f"v{APP_VERSION} · {APP_BUILD_DATE}")
+    st.caption(f"Legislation: {LEGISLATION_DATE}")
+    if date.today() >= date(2025, 7, 1):
+        st.warning("SG rate has risen to 12%. Update Model Parameters.")
+
 # ── Run model ────────────────────────────────────────────────────
 base_client = dict(name=client_name,income=income,expenses=expenses,
     super_balance=super_bal,investments=invest,cash=cash,debt=debt)
@@ -241,7 +251,7 @@ if demo_mode:
 st.markdown(f"""
 <div class="report-header">
   <h1>Financial Scenario Planner</h1>
-  <p>{client_name} &nbsp;·&nbsp; Age {age_1}/{age_2} &nbsp;·&nbsp; {date.today().strftime('%d %B %Y')} &nbsp;·&nbsp; Australian accumulation phase model</p>
+  <p>{client_name} &nbsp;·&nbsp; Age {age_1}/{age_2} &nbsp;·&nbsp; {date.today().strftime('%d %B %Y')} &nbsp;·&nbsp; Australian accumulation phase model &nbsp;·&nbsp; v{APP_VERSION}</p>
 </div>""", unsafe_allow_html=True)
 
 # ── Tabs ─────────────────────────────────────────────────────────
