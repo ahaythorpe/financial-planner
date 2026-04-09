@@ -111,6 +111,37 @@ def project_balance_sheet(client, years=20, gr=0.07, sg=0.115, rep=20000):
             debt=max(0.0,debt-rep)
     return pd.DataFrame(rows).set_index("Year")
 
+def calc_pre_retirement(client, current_age, retirement_age,
+        target_income, gr=0.07, sg=0.115, rep=20000):
+    years_to_retire = max(0, retirement_age - current_age)
+    sup   = float(client["super_balance"])
+    inv   = float(client["investments"])
+    cash_ = float(client["cash"])
+    debt  = float(client["debt"])
+    extra = max(0, client["income"] - client["expenses"] - rep)
+    for y in range(years_to_retire):
+        sup  = sup*(1+gr) + client["income"]*sg
+        inv  = inv*(1+gr) + extra
+        debt = max(0.0, debt - rep)
+    projected_super     = round(sup)
+    projected_total     = round(sup + inv + cash_)
+    target_super_needed = round(target_income / 0.04)
+    readiness_gap       = projected_super - target_super_needed
+    annual_super_growth = client["income"] * sg
+    if readiness_gap < 0 and annual_super_growth > 0:
+        years_to_close = abs(readiness_gap) / annual_super_growth
+    else:
+        years_to_close = 0
+    return {
+        "years_to_retire":     years_to_retire,
+        "projected_super":     projected_super,
+        "projected_total":     projected_total,
+        "target_super_needed": target_super_needed,
+        "readiness_gap":       readiness_gap,
+        "years_to_close":      round(years_to_close, 1),
+        "on_track":            readiness_gap >= 0,
+    }
+
 def fmt(v):
     if v is None or (isinstance(v,float) and np.isnan(v)): return ""
     return f"${v:,.0f}" if v>=0 else f"(${abs(v):,.0f})"
@@ -147,6 +178,17 @@ with st.sidebar:
     age_1 = st.number_input("Client 1 age", min_value=18, max_value=85, value=35, step=1, disabled=demo_mode)
     age_2 = st.number_input("Partner age (0 = no partner)", min_value=0, max_value=85, value=37, step=1, disabled=demo_mode)
     older_age = max(age_1, age_2) if age_2 > 0 else age_1
+
+    if older_age >= 50:
+        st.markdown("---")
+        st.markdown("<div style='font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#aaa;margin:8px 0 4px'>Pre-retirement inputs</div>", unsafe_allow_html=True)
+        retirement_age = st.number_input("Target retirement age", min_value=55, max_value=75,
+            value=67, step=1, disabled=demo_mode)
+        target_income = st.number_input("Target retirement income ($ p.a.)", min_value=0,
+            step=5000, value=80000, disabled=demo_mode)
+    else:
+        retirement_age = 67
+        target_income  = 80000
 
     st.markdown("<div style='font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#aaa;margin:8px 0 4px'>Income & Expenses</div>", unsafe_allow_html=True)
     income   = st.number_input("Income ($)",   min_value=0,step=5000,  value=p["income"]        if p else 160000, disabled=demo_mode)
@@ -255,9 +297,10 @@ st.markdown(f"""
 </div>""", unsafe_allow_html=True)
 
 # ── Tabs ─────────────────────────────────────────────────────────
-t_about, t_dash, t_scen, t_shock, t_proj, t_leg, t_report = st.tabs([
+t_about, t_dash, t_scen, t_shock, t_proj, t_life, t_leg, t_report = st.tabs([
     "About", "Client Dashboard", "Scenario Analysis",
-    "Shock Analysis", "Projection", "Legislation", "Report"])
+    "Shock Analysis", "Projection", "Life Stage",
+    "Legislation", "Report"])
 
 # ════════════════════════════════════════════════════════════════
 # ABOUT TAB
@@ -668,6 +711,88 @@ with t_proj:
     html3 += '</tbody></table>'
     st.markdown(html3, unsafe_allow_html=True)
     st.caption(f"Projections assume consistent {gr*100:.0f}% annual returns. Real returns vary year to year. These figures illustrate the compounding effect of strategic decisions — not guaranteed outcomes. Age Pension and contributions tax are not modelled.")
+
+# ════════════════════════════════════════════════════════════════
+# LIFE STAGE
+# ════════════════════════════════════════════════════════════════
+with t_life:
+    st.markdown("### Life Stage Analysis")
+    st.caption("Australian financial life stage modelling — accumulation phase active")
+
+    st.markdown("""
+    <div style='background:#E6F1FB;border-radius:10px;padding:1rem 1.25rem;margin-bottom:12px;
+    border:1px solid #B5D4F4'>
+    <div style='font-size:11px;text-transform:uppercase;letter-spacing:.08em;
+    color:#185FA5;margin-bottom:4px'>Active — Accumulation phase</div>
+    <div style='font-size:14px;font-weight:500;color:#1B2E4B'>Building wealth while working</div>
+    <div style='font-size:12px;color:#444;margin-top:6px'>
+    Super grows at 7% + SG contributions. Portfolio grows from reinvested surplus.
+    Debt reduces by annual repayment.
+    </div></div>""", unsafe_allow_html=True)
+
+    if older_age >= 50:
+        pr = calc_pre_retirement(
+            base_client, older_age, retirement_age, target_income, gr, sg, rep)
+
+        st.markdown("---")
+        st.markdown("#### Pre-Retirement Readiness")
+        st.caption(f"Based on target retirement age {retirement_age} and income ${target_income:,} p.a.")
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Projected super at retirement", fmt(pr["projected_super"]))
+        with col2:
+            st.metric("Target super needed", fmt(pr["target_super_needed"]),
+                help="Desired income ÷ 4% safe withdrawal rate")
+        with col3:
+            gap_val = pr["readiness_gap"]
+            st.metric("Readiness gap", fmt(gap_val),
+                delta="On track" if gap_val >= 0 else "Shortfall",
+                delta_color="normal" if gap_val >= 0 else "inverse")
+
+        if pr["on_track"]:
+            st.success(f"On track for retirement at age {retirement_age}. "
+                f"Projected super exceeds target by {fmt(pr['readiness_gap'])}.")
+        else:
+            st.error(f"Projected shortfall of {fmt(abs(pr['readiness_gap']))} "
+                f"against retirement target. At current SG rate approximately "
+                f"{pr['years_to_close']:.1f} additional years of contributions needed to close gap.")
+
+        st.caption(
+            "Target super = desired retirement income ÷ 4% (safe withdrawal rate). "
+            "Age Pension not included — assess separately via Services Australia. "
+            "Catch-up contributions and salary sacrifice not modelled.")
+
+    else:
+        st.markdown("""
+        <div style='background:#F8F7F4;border-radius:10px;padding:1rem 1.25rem;
+        margin-bottom:12px;border:0.5px solid #E5E7EB;opacity:0.7'>
+        <div style='font-size:11px;text-transform:uppercase;letter-spacing:.08em;
+        color:#aaa;margin-bottom:4px'>Coming soon — Pre-Retirement phase</div>
+        <div style='font-size:13px;color:#888'>
+        Available when client age reaches 50. Models retirement readiness —
+        target super, readiness gap, and years to close shortfall.
+        </div></div>""", unsafe_allow_html=True)
+
+    st.markdown("""
+    <div style='background:#F8F7F4;border-radius:10px;padding:1rem 1.25rem;
+    margin-bottom:12px;border:0.5px solid #E5E7EB;opacity:0.7'>
+    <div style='font-size:11px;text-transform:uppercase;letter-spacing:.08em;
+    color:#aaa;margin-bottom:4px'>Coming soon — Retirement Drawdown phase</div>
+    <div style='font-size:13px;color:#888'>
+    Models sustainable income from accumulated assets.
+    4% drawdown rule · asset depletion age · sustainable income level.
+    Age Pension not modelled.
+    </div></div>""", unsafe_allow_html=True)
+
+    st.markdown("""
+    <div style='background:#F8F7F4;border-radius:10px;padding:1rem 1.25rem;
+    border:0.5px solid #E5E7EB;opacity:0.7'>
+    <div style='font-size:11px;text-transform:uppercase;letter-spacing:.08em;
+    color:#aaa;margin-bottom:4px'>Planned — Pension Phase</div>
+    <div style='font-size:13px;color:#888'>
+    Transfer Balance Cap management · tax-free pension phase · Age Pension interaction.
+    </div></div>""", unsafe_allow_html=True)
 
 # ════════════════════════════════════════════════════════════════
 # LEGISLATION
