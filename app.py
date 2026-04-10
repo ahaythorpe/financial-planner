@@ -687,38 +687,6 @@ with t_scen:
                       Patch(facecolor="#E2F0D9", edgecolor="#006100", label="Surplus")]
         ax.legend(handles=legend_els, loc="lower center", bbox_to_anchor=(0.5,-0.18), ncol=3, fontsize=7, framealpha=0.9)
         plt.tight_layout(); st.pyplot(fig); plt.close()
-        st.markdown("**Cash flow funnel — base case**")
-        stages = [
-            ("Gross income",    income,                    NAVY),
-            ("After expenses",  max(0,income-expenses),    S1_COLOR),
-            ("Reinvestable",    max(0,income-expenses-rep),TEAL),
-        ]
-        fig_f, ax_f = plt.subplots(figsize=(11, 3))
-        for i, (label, val, clr) in enumerate(stages):
-            w = val/income if income else 0
-            left = (1-w)/2
-            ax_f.barh(i, w, left=left, height=0.55,
-                color=clr, zorder=3)
-            ax_f.text(0.5, i,
-                f"{label}\n{fmt(val)}",
-                ha="center", va="center",
-                fontsize=9, fontweight="bold",
-                color="white")
-        ax_f.set_xlim(0, 1)
-        ax_f.set_ylim(-0.5, 2.5)
-        ax_f.set_xticks([])
-        ax_f.set_yticks([])
-        for sp in ax_f.spines.values():
-            sp.set_visible(False)
-        ax_f.set_title("Cash Flow Funnel — Base Case",
-            fontweight="bold", color=NAVY,
-            pad=8, fontsize=10)
-        plt.tight_layout()
-        st.pyplot(fig_f)
-        plt.close()
-        render_insight(generate_insight("cashflow",
-            br,s1r,s2r,bp,s1p,s2p,s1_type,s2_type,
-            yrs,income,expenses,rep,cash,debt,super_bal))
 
     with col_b:
         fig, ax = plt.subplots(figsize=(11, 5))
@@ -748,6 +716,59 @@ with t_scen:
         render_insight(generate_insight("balance",
             br,s1r,s2r,bp,s1p,s2p,s1_type,s2_type,
             yrs,income,expenses,rep,cash,debt,super_bal))
+
+    # ── Row 1b: Cash Flow Funnel (full width) ────────────────────
+    reinvestable = max(0, income - expenses - rep)
+    after_exp    = max(0, income - expenses)
+    exp_pct_b    = expenses / income * 100 if income else 0
+    rep_pct_b    = rep / income * 100 if income else 0
+    sur_pct_b    = reinvestable / income * 100 if income else 0
+    stages = [
+        ("Gross income",   income,       NAVY),
+        ("After expenses", after_exp,    S1_COLOR),
+        ("Reinvestable",   reinvestable, TEAL),
+    ]
+    fig_f, ax_f = plt.subplots(figsize=(12, 2.8))
+    for i, (label, val, clr) in enumerate(stages):
+        w = val / income if income else 0
+        left = (1 - w) / 2
+        ax_f.barh(i, w, left=left, height=0.52, color=clr, zorder=3)
+        dollar = fmt(val)
+        pct = f"{w*100:.0f}% of income"
+        ax_f.text(0.5, i, f"{label}  ·  {dollar}  ·  {pct}",
+            ha="center", va="center", fontsize=9,
+            fontweight="bold", color="white")
+    ax_f.set_xlim(0, 1)
+    ax_f.set_ylim(-0.6, 2.6)
+    ax_f.set_xticks([]); ax_f.set_yticks([])
+    for sp in ax_f.spines.values():
+        sp.set_visible(False)
+    ax_f.set_title("Cash Flow Funnel — Base Case",
+        fontweight="bold", color=NAVY, pad=8, fontsize=10)
+    plt.tight_layout(); st.pyplot(fig_f); plt.close()
+
+    # ── Cashflow insight (data-driven) ───────────────────────────
+    _sr = br["savings_rate"]
+    _cf_pts = []
+    if _sr >= 0.35:
+        _cf_pts.append(f"Savings rate of {_sr*100:.1f}% is strong — well above the 10% minimum. At this rate ${reinvestable:,.0f} compounds annually into long-term wealth.")
+    elif _sr >= 0.2:
+        _cf_pts.append(f"Savings rate of {_sr*100:.1f}% is healthy. ${reinvestable:,.0f} is available each year for reinvestment after debt repayment.")
+    elif _sr >= 0.1:
+        _cf_pts.append(f"Savings rate of {_sr*100:.1f}% meets the minimum benchmark. Only ${reinvestable:,.0f} is available for reinvestment — any expense increase would put this at risk.")
+    else:
+        _cf_pts.append(f"Savings rate of {_sr*100:.1f}% is below the 10% benchmark. With only ${reinvestable:,.0f} reinvestable, wealth accumulation is constrained — review expense strategy.")
+    _exp_diff = expenses - (income * 0.5)
+    if _exp_diff > 0:
+        _cf_pts.append(f"Expenses consume {exp_pct_b:.0f}% of gross income — above the 50% guideline by ${_exp_diff:,.0f}. Debt repayment takes a further {rep_pct_b:.0f}%.")
+    else:
+        _cf_pts.append(f"Expenses at {exp_pct_b:.0f}% of gross income are within the 50% guideline. Debt repayment takes a further {rep_pct_b:.0f}%, leaving {sur_pct_b:.0f}% reinvestable.")
+    _best_s = s1_type if s1r["surplus"] > s2r["surplus"] else s2_type
+    _best_v = max(s1r["surplus"], s2r["surplus"])
+    if _best_v > br["surplus"]:
+        _delta = _best_v - br["surplus"]
+        _cf_pts.append(f"{_best_s} improves annual surplus by ${_delta:,.0f} to ${_best_v:,.0f} — the strongest cash flow outcome across all scenarios.")
+    render_insight(_cf_pts)
 
     # ── Row 2: Milestone Comparison (full width) ─────────────────
     milestones_c = [y for y in [0,5,10,15,20] if y<=yrs]
