@@ -660,7 +660,7 @@ with t_scen:
 
     with col_a:
         from matplotlib.patches import Patch
-        fig, ax = plt.subplots(figsize=(11, max(4, 0.9*len(scen_labels))))
+        fig, ax = plt.subplots(figsize=(14, max(4, 0.9*len(scen_labels))))
         for i, sc in enumerate(scen_clients):
             inc = sc["income"] if sc["income"] else 1
             exp_pct = sc["expenses"] / inc
@@ -689,7 +689,7 @@ with t_scen:
         plt.tight_layout(); st.pyplot(fig); plt.close()
 
     with col_b:
-        fig, ax = plt.subplots(figsize=(11, 5))
+        fig, ax = plt.subplots(figsize=(14, 6))
         yrs_idx = bs_proj.index
         assets_s = bs_proj["Assets"] / 1e6
         liab_s   = bs_proj["Liabilities"] / 1e6
@@ -728,7 +728,7 @@ with t_scen:
         ("After expenses", after_exp,    S1_COLOR),
         ("Reinvestable",   reinvestable, TEAL),
     ]
-    fig_f, ax_f = plt.subplots(figsize=(12, 2.8))
+    fig_f, ax_f = plt.subplots(figsize=(14, 3))
     for i, (label, val, clr) in enumerate(stages):
         w = val / income if income else 0
         left = (1 - w) / 2
@@ -775,7 +775,7 @@ with t_scen:
     n_sc = len(scen_projs)
     bar_w = min(0.8/n_sc, 0.25)
     x_pos = np.arange(len(milestones_c))
-    fig, ax = plt.subplots(figsize=(12, 5))
+    fig, ax = plt.subplots(figsize=(14, 6))
     for i, (proj, lbl, clr) in enumerate(zip(scen_projs, scen_labels, scen_colors)):
         vals = [proj.loc[y,"Net Worth"]/1e6 if y in proj.index else 0 for y in milestones_c]
         offset = (i - n_sc/2 + 0.5) * bar_w
@@ -819,135 +819,123 @@ with t_scen:
 
     # PANEL 1 — Asset mix
     st.markdown("#### Asset composition")
-    p1c,p1i = st.columns([3,2])
-    with p1c:
-        fig,ax=plt.subplots(figsize=(6,4))
-        ax.pie([super_bal,invest,cash],
-            labels=["Super","Investments","Cash"],
-            colors=[NAVY,S1_COLOR,TEAL],
-            autopct="%1.0f%%",startangle=90,
-            wedgeprops={"linewidth":1.5,"edgecolor":"white"},
-            textprops={"fontsize":9})
-        ax.set_title("Asset Mix — Base Case",
-            fontweight="bold",color=NAVY,pad=10,fontsize=10)
-        plt.tight_layout(); st.pyplot(fig); plt.close()
-    with p1i:
-        ta=br["total_assets"]
-        sp_pct=super_bal/ta*100 if ta else 0
-        in_pct=invest/ta*100 if ta else 0
-        ca_pct=cash/ta*100 if ta else 0
-        pts1=[]
-        if sp_pct>60:
-            pts1.append(f"Super dominates at {sp_pct:.0f}% of total assets — high concentration in a single vehicle.")
-        else:
-            pts1.append(f"Superannuation is {sp_pct:.0f}% of total assets — reasonably diversified asset base.")
-        if ca_pct<10:
-            pts1.append(f"Cash is only {ca_pct:.0f}% of assets — limited liquidity outside super and investments.")
-        else:
-            pts1.append(f"Cash at {ca_pct:.0f}% provides reasonable liquidity for short-term needs.")
-        if in_pct>0:
-            pts1.append(f"Non-super investments ({in_pct:.0f}%) are accessible before preservation age.")
-        pts1.append("Consider diversification across vehicles to reduce concentration risk.")
-        st.markdown("<div style='height:1rem'></div>",unsafe_allow_html=True)
-        render_insight(pts1)
+    ta=br["total_assets"]
+    sp_pct=super_bal/ta*100 if ta else 0
+    in_pct=invest/ta*100 if ta else 0
+    ca_pct=cash/ta*100 if ta else 0
+    fig,ax=plt.subplots(figsize=(14,5))
+    ax.pie([super_bal,invest,cash],
+        labels=["Super","Investments","Cash"],
+        colors=[NAVY,S1_COLOR,TEAL],
+        autopct="%1.0f%%",startangle=90,
+        wedgeprops={"linewidth":1.5,"edgecolor":"white"},
+        textprops={"fontsize":9})
+    ax.set_title("Asset Mix — Base Case",
+        fontweight="bold",color=NAVY,pad=10,fontsize=10)
+    plt.tight_layout(); st.pyplot(fig); plt.close()
+    pts1=[]
+    if sp_pct>60:
+        pts1.append(f"Super dominates at {sp_pct:.0f}% of total assets — high concentration in a single vehicle.")
+    else:
+        pts1.append(f"Superannuation is {sp_pct:.0f}% of total assets — reasonably diversified asset base.")
+    if ca_pct<10:
+        pts1.append(f"Cash is only {ca_pct:.0f}% of assets — limited liquidity outside super and investments.")
+    else:
+        pts1.append(f"Cash at {ca_pct:.0f}% provides reasonable liquidity for short-term needs.")
+    if in_pct>0:
+        pts1.append(f"Non-super investments ({in_pct:.0f}%) are accessible before preservation age.")
+    pts1.append("Consider diversification across vehicles to reduce concentration risk.")
+    render_insight(pts1)
     st.markdown("---")
 
     # PANEL 2 — Net position by scenario
     st.markdown("#### Net position by scenario")
-    p2c,p2i = st.columns([3,2])
-    with p2c:
-        nv=[br["net_position"],s1r["net_position"],
-            s2r["net_position"]]+ \
-            [eo["results"]["net_position"]
-             for _,eo,_ in extra_outputs]
-        nl=(["Base",s1_type,s2_type]+
-            [e["scenario_name"] for e in extras])
-        bc=[BG_NEG if v<0 else BG_POS for v in nv]
-        be=[TXT_NEG if v<0 else TXT_POS for v in nv]
-        fig,ax=plt.subplots(figsize=(6,4))
-        bars=ax.bar(nl,nv,color=bc,edgecolor=be,
-            linewidth=1.5,width=0.5,zorder=3)
-        ax.axhline(0,color="#C00000",
-            linewidth=1,linestyle="--")
-        sp=max(abs(v) for v in nv)
-        for bar,v in zip(bars,nv):
-            clr=TXT_POS if v>=0 else TXT_NEG
-            ax.text(bar.get_x()+bar.get_width()/2,
-                v+sp*.05*(1 if v>=0 else -1),
-                fmt(v),ha="center",
-                va="bottom" if v>=0 else "top",
-                fontsize=8,fontweight="bold",color=clr)
-        ax.set_title("Net Position by Scenario",
-            fontweight="bold",color=NAVY,pad=10,fontsize=10)
-        ax.yaxis.set_major_formatter(mticker.FuncFormatter(
-            lambda x,_:f"${x/1000:.0f}k"))
-        plt.xticks(fontsize=8)
-        plt.tight_layout(); st.pyplot(fig); plt.close()
-    with p2i:
-        best_n_idx=nv.index(max(nv))
-        pts2=[]
-        if br["net_position"]<0:
-            pts2.append(f"Base case net deficit of {fmt(br['net_position'])} — liabilities exceed assets at this stage.")
-        else:
-            pts2.append(f"Net positive position of {fmt(br['net_position'])} — assets exceed liabilities.")
-        if max(nv)>br["net_position"]:
-            pts2.append(f"{nl[best_n_idx]} produces the strongest balance sheet outcome at {fmt(max(nv))}.")
-        pts2.append("Red bars show negative net worth — expected at accumulation stage with an active mortgage.")
-        pts2.append("Net position improves as debt reduces and investments compound over time.")
-        st.markdown("<div style='height:1rem'></div>",unsafe_allow_html=True)
-        render_insight(pts2)
+    nv=[br["net_position"],s1r["net_position"],
+        s2r["net_position"]]+ \
+        [eo["results"]["net_position"]
+         for _,eo,_ in extra_outputs]
+    nl=(["Base",s1_type,s2_type]+
+        [e["scenario_name"] for e in extras])
+    bc=[BG_NEG if v<0 else BG_POS for v in nv]
+    be=[TXT_NEG if v<0 else TXT_POS for v in nv]
+    fig,ax=plt.subplots(figsize=(14,5))
+    bars=ax.bar(nl,nv,color=bc,edgecolor=be,
+        linewidth=1.5,width=0.5,zorder=3)
+    ax.axhline(0,color="#C00000",
+        linewidth=1,linestyle="--")
+    sp=max(abs(v) for v in nv)
+    for bar,v in zip(bars,nv):
+        clr=TXT_POS if v>=0 else TXT_NEG
+        ax.text(bar.get_x()+bar.get_width()/2,
+            v+sp*.05*(1 if v>=0 else -1),
+            fmt(v),ha="center",
+            va="bottom" if v>=0 else "top",
+            fontsize=8,fontweight="bold",color=clr)
+    ax.set_title("Net Position by Scenario",
+        fontweight="bold",color=NAVY,pad=10,fontsize=10)
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(
+        lambda x,_:f"${x/1000:.0f}k"))
+    plt.xticks(fontsize=8)
+    plt.tight_layout(); st.pyplot(fig); plt.close()
+    best_n_idx=nv.index(max(nv))
+    pts2=[]
+    if br["net_position"]<0:
+        pts2.append(f"Base case net deficit of {fmt(br['net_position'])} — liabilities exceed assets at this stage.")
+    else:
+        pts2.append(f"Net positive position of {fmt(br['net_position'])} — assets exceed liabilities.")
+    if max(nv)>br["net_position"]:
+        pts2.append(f"{nl[best_n_idx]} produces the strongest balance sheet outcome at {fmt(max(nv))}.")
+    pts2.append("Red bars show negative net worth — expected at accumulation stage with an active mortgage.")
+    pts2.append("Net position improves as debt reduces and investments compound over time.")
+    render_insight(pts2)
     st.markdown("---")
 
     # PANEL 3 — 20-year projection
     st.markdown(f"#### {yrs}-year wealth projection")
-    p3c,p3i = st.columns([3,2])
-    with p3c:
-        fig,ax=plt.subplots(figsize=(6,4))
-        ax.plot(bp.index,bp["Net Worth"]/1e6,
-            color=NAVY,linewidth=2.5,label="Base Case",zorder=3)
-        for label,r,proj,clr in all_scenarios:
-            ls=("--" if "Income" in label
-                else ":" if "Debt" in label else "-.")
-            ax.plot(proj.index,proj["Net Worth"]/1e6,
-                color=clr,linewidth=2,linestyle=ls,
-                label=label,zorder=3)
-        ax.axhline(0,color="#ddd",linewidth=0.8)
-        ax.fill_between(bp.index,0,bp["Net Worth"]/1e6,
-            where=bp["Net Worth"]>0,alpha=.05,color=NAVY)
-        last=bp.index[-1]
-        for proj,clr in ([(bp,NAVY)]+
-            [(p,c) for _,_,p,c in all_scenarios]):
-            v=proj.iloc[-1]["Net Worth"]
-            ax.annotate(f"  ${v/1e6:.2f}M",
-                xy=(last,v/1e6),fontsize=8,
-                fontweight="bold",color=clr,va="center")
-        ax.set_xlabel("Year",color=NAVY)
-        ax.set_ylabel("Net Worth ($M)",color=NAVY)
-        ax.yaxis.set_major_formatter(mticker.FuncFormatter(
-            lambda x,_:f"${x:.1f}M"))
-        ax.legend(framealpha=.9,fontsize=8,loc="upper left")
-        ax.set_title(f"{yrs}-Year Net Worth Projection",
-            fontweight="bold",color=NAVY,pad=10,fontsize=10)
-        plt.tight_layout(); st.pyplot(fig); plt.close()
-    with p3i:
-        b20=bp.iloc[-1]["Net Worth"]
-        best20=max(b20,s1p.iloc[-1]["Net Worth"],
-            s2p.iloc[-1]["Net Worth"])
-        best20n=("Base Case" if best20==b20
-            else s1_type if best20==s1p.iloc[-1]["Net Worth"]
-            else s2_type)
-        gap20=best20-min(b20,s1p.iloc[-1]["Net Worth"],
-            s2p.iloc[-1]["Net Worth"])
-        cx=next((int(y) for y,r in bp.iterrows()
-            if r["Net Worth"]>0),None)
-        pts3=[]
-        pts3.append(f"{best20n} projects the strongest year {yrs} outcome at ${best20/1e6:.2f}M.")
-        pts3.append(f"Scenario gap at year {yrs}: ${gap20/1e6:.2f}M — compounding amplifies early surplus differences.")
-        if cx and cx>0:
-            pts3.append(f"Net worth turns positive in year {cx} — growth accelerates as debt clears.")
-        pts3.append("Small strategy differences today create large wealth divergence over 20 years.")
-        st.markdown("<div style='height:1rem'></div>",unsafe_allow_html=True)
-        render_insight(pts3)
+    fig,ax=plt.subplots(figsize=(14,5))
+    ax.plot(bp.index,bp["Net Worth"]/1e6,
+        color=NAVY,linewidth=2.5,label="Base Case",zorder=3)
+    for label,r,proj,clr in all_scenarios:
+        ls=("--" if "Income" in label
+            else ":" if "Debt" in label else "-.")
+        ax.plot(proj.index,proj["Net Worth"]/1e6,
+            color=clr,linewidth=2,linestyle=ls,
+            label=label,zorder=3)
+    ax.axhline(0,color="#ddd",linewidth=0.8)
+    ax.fill_between(bp.index,0,bp["Net Worth"]/1e6,
+        where=bp["Net Worth"]>0,alpha=.05,color=NAVY)
+    last=bp.index[-1]
+    for proj,clr in ([(bp,NAVY)]+
+        [(p,c) for _,_,p,c in all_scenarios]):
+        v=proj.iloc[-1]["Net Worth"]
+        ax.annotate(f"  ${v/1e6:.2f}M",
+            xy=(last,v/1e6),fontsize=8,
+            fontweight="bold",color=clr,va="center")
+    ax.set_xlabel("Year",color=NAVY)
+    ax.set_ylabel("Net Worth ($M)",color=NAVY)
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(
+        lambda x,_:f"${x:.1f}M"))
+    ax.legend(framealpha=.9,fontsize=8,loc="upper left")
+    ax.set_title(f"{yrs}-Year Net Worth Projection",
+        fontweight="bold",color=NAVY,pad=10,fontsize=10)
+    plt.tight_layout(); st.pyplot(fig); plt.close()
+    b20=bp.iloc[-1]["Net Worth"]
+    best20=max(b20,s1p.iloc[-1]["Net Worth"],
+        s2p.iloc[-1]["Net Worth"])
+    best20n=("Base Case" if best20==b20
+        else s1_type if best20==s1p.iloc[-1]["Net Worth"]
+        else s2_type)
+    gap20=best20-min(b20,s1p.iloc[-1]["Net Worth"],
+        s2p.iloc[-1]["Net Worth"])
+    cx=next((int(y) for y,r in bp.iterrows()
+        if r["Net Worth"]>0),None)
+    pts3=[]
+    pts3.append(f"{best20n} projects the strongest year {yrs} outcome at ${best20/1e6:.2f}M.")
+    pts3.append(f"Scenario gap at year {yrs}: ${gap20/1e6:.2f}M — compounding amplifies early surplus differences.")
+    if cx and cx>0:
+        pts3.append(f"Net worth turns positive in year {cx} — growth accelerates as debt clears.")
+    pts3.append("Small strategy differences today create large wealth divergence over 20 years.")
+    render_insight(pts3)
     render_insight(generate_insight("summary",
         br,s1r,s2r,bp,s1p,s2p,s1_type,s2_type,
         yrs,income,expenses,rep,cash,debt,super_bal))
@@ -963,13 +951,20 @@ with t_shock:
     c1,c2 = st.columns(2)
     with c1:
         sh_inc = st.slider("Income reduction (%)",   5,50,20,5)
+        st.caption(f"Applied as: income × (1 − {sh_inc/100:.2f}) = ${income*(1-sh_inc/100):,.0f} p.a.  Reduces annual surplus by ${income*sh_inc/100:,.0f} — that shortfall stops compounding for every remaining year.")
         sh_exp = st.slider("Expense increase (%)",   5,50,20,5)
+        st.caption(f"Applied as: expenses × (1 + {sh_exp/100:.2f}) = ${expenses*(1+sh_exp/100):,.0f} p.a.  Surplus falls by ${expenses*sh_exp/100:,.0f} each year.")
         sh_ret = st.slider("Investment returns drop — use % p.a.",1,6,3,1)
+        st.caption(f"Applied as: growth rate drops from {gr*100:.1f}% → {max(0,gr*100-sh_ret):.1f}% p.a.  Even 1% less return materially erodes a large portfolio via compounding.")
         sh_job = st.slider("Job loss (months)",      1,24,6,1)
+        st.caption(f"Applied as: income × (1 − {sh_job}/12) = ${income*(1-sh_job/12):,.0f} annualised.  {sh_job} months of zero income averaged across year 1.")
     with c2:
         sh_rate= st.slider("Interest rate rise (%)", 1,5,2,1)
+        st.caption(f"Applied as: expenses += debt × {sh_rate/100:.2f} = extra ${debt*sh_rate/100:,.0f} p.a.  Treats the rise as a permanent annual cost.")
         sh_sup = st.slider("Super paused (years)",   1,10,3,1)
+        st.caption(f"Applied as: super_balance − (income × SG × {sh_sup}) = −${income*sg*sh_sup:,.0f} removed.  Missed contributions lose all future compounding.")
         sh_dbt = st.slider("Debt increase (%)",      5,30,10,5)
+        st.caption(f"Applied as: debt × (1 + {sh_dbt/100:.2f}) = ${debt*(1+sh_dbt/100):,.0f} total.  Reduces net worth by ${debt*sh_dbt/100:,.0f} immediately.")
 
     base_y20 = bp.loc[min(yrs,20),"Net Worth"] if yrs>=20 else bp.iloc[-1]["Net Worth"]
 
@@ -989,7 +984,7 @@ with t_shock:
     deltas = [(label, nw-base_y20) for label,nw in shocks]
     deltas.sort(key=lambda x:x[1])
 
-    fig,ax=plt.subplots(figsize=(10,4))
+    fig,ax=plt.subplots(figsize=(14,5))
     labels_s=[d[0] for d in deltas]; vals_s=[d[1] for d in deltas]
     bar_colors=[BG_NEG if v<0 else BG_POS for v in vals_s]
     bar_edge  =[TXT_NEG if v<0 else TXT_POS for v in vals_s]
