@@ -10,7 +10,7 @@ APP_BUILD_DATE   = "April 2026"
 LEGISLATION_DATE = "2024-25 financial year"
 
 st.set_page_config(
-    page_title="Financial Scenario Planner",
+    page_title="Client Scenario Engine",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -499,7 +499,7 @@ if demo_mode:
 
 st.markdown(f"""
 <div class="report-header">
-  <h1>Financial Scenario Planner</h1>
+  <h1>Client Scenario Engine</h1>
   <p>{client_name} &nbsp;·&nbsp; Age {age_1}/{age_2} &nbsp;·&nbsp; {date.today().strftime('%d %B %Y')} &nbsp;·&nbsp; Australian accumulation phase model &nbsp;·&nbsp; v{APP_VERSION}</p>
 </div>""", unsafe_allow_html=True)
 
@@ -513,26 +513,27 @@ t_about, t_demo, t_dash, t_scen, t_shock, t_proj, t_life, t_leg, t_model, t_repo
 # ABOUT TAB
 # ════════════════════════════════════════════════════════════════
 with t_about:
-    st.markdown("### Financial Scenario Planner — Australian Edition")
-    st.caption("Illustration tool for financial planning professionals · Not financial advice")
+    st.markdown("### Client Scenario Engine")
+    st.caption("Financial decision simulator for advice conversations · Not financial advice")
 
-    with st.expander("What this tool is and why it was built", expanded=True):
+    with st.expander("What this engine does and who it's for", expanded=True):
         st.markdown("""
-This tool models the financial journey of an Australian client across three phases:
+The Client Scenario Engine is a decision simulator built for financial advice conversations.
+It models an Australian client's financial journey across three life phases:
 
 - **Accumulation** — building wealth while working
-- **Pre-retirement** — checking readiness to stop working *(coming soon)*
-- **Retirement drawdown** — managing drawdown of accumulated assets *(coming soon)*
+- **Pre-retirement** — assessing readiness to stop working
+- **Retirement drawdown** — managing sustainable income from accumulated assets
 
-It was built because financial planning concepts are often explained in isolation.
-This tool shows how phases connect — how decisions made at 35 compound into outcomes at 65.
+**Why it exists:** Financial planning concepts are often explained in isolation.
+This engine shows how phases connect — how decisions made at 35 compound into outcomes at 65 —
+so advisers can illustrate trade-offs in real time during client conversations.
 
-**This is an illustration tool.** It does not replace a Statement of Advice, licensed financial
-advice, or superannuation fund projections. All outputs are indicative only.
+**Built for advisers, not consumers.** This is a scenario modelling tool, not a Statement of Advice.
+All outputs are indicative only and do not constitute personal financial advice.
 
-**Sarah and Daniel are a locked demonstration case.** Their values cannot be changed.
-They illustrate a typical Australian couple in the accumulation phase.
-All other client inputs are fully editable via the sidebar.
+**Sarah & Daniel** are a locked demonstration case illustrating a typical Australian couple
+in the accumulation phase. Switch to New Client to enter your own figures.
         """)
 
     with st.expander("How to use this tool"):
@@ -2055,7 +2056,7 @@ The disclaimer text is available below and must accompany any client-facing outp
 
     disclaimer = (
         f"This report has been prepared by {practice_name} "
-        f"using the Financial Scenario Planner "
+        f"using the Client Scenario Engine "
         f"(Version {APP_VERSION}, {APP_BUILD_DATE}). "
         "It contains general financial information only "
         "and does not take into account your individual "
