@@ -971,6 +971,18 @@ with t_scen:
         ax.legend(handles=legend_els, loc="lower center", bbox_to_anchor=(0.5,-0.12), ncol=3, fontsize=8, framealpha=0.9)
         plt.tight_layout(); st.pyplot(fig); plt.close()
 
+        # Income Allocation insight
+        _inc_pts = []
+        _surpluses = {lbl: max(0, 1 - sc["expenses"]/(sc["income"] if sc["income"] else 1) - rep/(sc["income"] if sc["income"] else 1)) for lbl, sc in zip(scen_labels, scen_clients)}
+        _best_alloc = max(_surpluses, key=_surpluses.get)
+        _worst_alloc = min(_surpluses, key=_surpluses.get)
+        _base_exp_pct = scen_clients[0]["expenses"] / (scen_clients[0]["income"] if scen_clients[0]["income"] else 1) * 100
+        _inc_pts.append(f"Base case allocates {_base_exp_pct:.0f}% to expenses — {'above' if _base_exp_pct > 50 else 'within'} the 50% guideline.")
+        _inc_pts.append(f"{_best_alloc} has the highest surplus ratio at {_surpluses[_best_alloc]*100:.0f}% of income available for reinvestment.")
+        if _surpluses[_best_alloc] != _surpluses[_worst_alloc]:
+            _inc_pts.append(f"Surplus gap between best and worst scenario: {(_surpluses[_best_alloc] - _surpluses[_worst_alloc])*100:.0f} percentage points of income.")
+        render_insight(_inc_pts)
+
     with _sc_col2:
         fig, ax = plt.subplots(figsize=(7, 6))
         yrs_idx = bs_proj.index
@@ -997,9 +1009,10 @@ with t_scen:
         ax.legend(loc="lower right", fontsize=9, framealpha=0.9)
         plt.tight_layout(); st.pyplot(fig); plt.close()
 
-    render_insight(generate_insight("balance",
-        br,s1r,s2r,bp,s1p,s2p,s1_type,s2_type,
-        yrs,income,expenses,rep,cash,debt,super_bal))
+        # Balance Sheet insight
+        render_insight(generate_insight("balance",
+            br,s1r,s2r,bp,s1p,s2p,s1_type,s2_type,
+            yrs,income,expenses,rep,cash,debt,super_bal))
 
     # ── Row 1b: Cash Flow Funnel (full width) ────────────────────
     reinvestable = max(0, income - expenses - rep)
