@@ -939,80 +939,76 @@ with t_scen:
     scen_colors  = [NAVY, S1_COLOR, TEAL] + EXTRA_COLORS[:len(extras)]
     scen_projs   = [bp, s1p, s2p] + [ep for _,_,ep in extra_outputs]
 
-    # ── Row 1: Income Composition | Balance Sheet Dynamics ──────
+    # ── Income Allocation (full width) ──────────────────────────
     from matplotlib.patches import Patch
-    _sc_col1, _sc_col2 = st.columns(2)
-    with _sc_col1:
-        fig, ax = plt.subplots(figsize=(7, max(4, 0.9*len(scen_labels))))
-        for i, sc in enumerate(scen_clients):
-            inc = sc["income"] if sc["income"] else 1
-            exp_pct = sc["expenses"] / inc
-            rep_pct = min(rep / inc, max(0, 1 - exp_pct))
-            sur_pct = max(0, 1 - exp_pct - rep_pct)
-            ax.barh(i, exp_pct, color="#FCE4D6", edgecolor="#C00000", linewidth=0.8, zorder=3)
-            ax.barh(i, rep_pct, left=exp_pct, color="#FFF3CD", edgecolor="#E8A838", linewidth=0.8, zorder=3)
-            ax.barh(i, sur_pct, left=exp_pct+rep_pct, color="#E2F0D9", edgecolor="#006100", linewidth=0.8, zorder=3)
-            if exp_pct > 0.08:
-                ax.text(exp_pct/2, i, f"{exp_pct*100:.0f}%", ha="center", va="center", fontsize=8, color="#C00000", fontweight="bold")
-            if rep_pct > 0.08:
-                ax.text(exp_pct+rep_pct/2, i, f"{rep_pct*100:.0f}%", ha="center", va="center", fontsize=8, color="#7a5c00", fontweight="bold")
-            if sur_pct > 0.08:
-                ax.text(exp_pct+rep_pct+sur_pct/2, i, f"{sur_pct*100:.0f}%", ha="center", va="center", fontsize=8, color="#006100", fontweight="bold")
-        ax.axvline(0.9, color=NAVY, linewidth=1, linestyle=":", zorder=4)
-        ax.text(0.905, len(scen_labels)-0.55, "10% min", fontsize=8, color=NAVY, va="top")
-        ax.set_yticks(range(len(scen_labels)))
-        ax.set_yticklabels(scen_labels, fontsize=9)
-        ax.set_xlim(0, 1.05)
-        ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x,_: f"{x*100:.0f}%"))
-        ax.set_title("Income Allocation by Scenario", fontweight="bold", color=NAVY, pad=8, fontsize=11)
-        legend_els = [Patch(facecolor="#FCE4D6", edgecolor="#C00000", label="Expenses"),
-                      Patch(facecolor="#FFF3CD", edgecolor="#E8A838", label="Debt repayment"),
-                      Patch(facecolor="#E2F0D9", edgecolor="#006100", label="Surplus")]
-        ax.legend(handles=legend_els, loc="lower center", bbox_to_anchor=(0.5,-0.12), ncol=3, fontsize=8, framealpha=0.9)
-        plt.tight_layout(); st.pyplot(fig); plt.close()
+    fig, ax = plt.subplots(figsize=(14, max(4, 0.9*len(scen_labels))))
+    for i, sc in enumerate(scen_clients):
+        inc = sc["income"] if sc["income"] else 1
+        exp_pct = sc["expenses"] / inc
+        rep_pct = min(rep / inc, max(0, 1 - exp_pct))
+        sur_pct = max(0, 1 - exp_pct - rep_pct)
+        ax.barh(i, exp_pct, color="#FCE4D6", edgecolor="#C00000", linewidth=0.8, zorder=3)
+        ax.barh(i, rep_pct, left=exp_pct, color="#FFF3CD", edgecolor="#E8A838", linewidth=0.8, zorder=3)
+        ax.barh(i, sur_pct, left=exp_pct+rep_pct, color="#E2F0D9", edgecolor="#006100", linewidth=0.8, zorder=3)
+        if exp_pct > 0.08:
+            ax.text(exp_pct/2, i, f"{exp_pct*100:.0f}%", ha="center", va="center", fontsize=8, color="#C00000", fontweight="bold")
+        if rep_pct > 0.08:
+            ax.text(exp_pct+rep_pct/2, i, f"{rep_pct*100:.0f}%", ha="center", va="center", fontsize=8, color="#7a5c00", fontweight="bold")
+        if sur_pct > 0.08:
+            ax.text(exp_pct+rep_pct+sur_pct/2, i, f"{sur_pct*100:.0f}%", ha="center", va="center", fontsize=8, color="#006100", fontweight="bold")
+    ax.axvline(0.9, color=NAVY, linewidth=1, linestyle=":", zorder=4)
+    ax.text(0.905, len(scen_labels)-0.55, "10% min", fontsize=8, color=NAVY, va="top")
+    ax.set_yticks(range(len(scen_labels)))
+    ax.set_yticklabels(scen_labels, fontsize=9)
+    ax.set_xlim(0, 1.05)
+    ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x,_: f"{x*100:.0f}%"))
+    ax.set_title("Income Allocation by Scenario", fontweight="bold", color=NAVY, pad=8, fontsize=11)
+    legend_els = [Patch(facecolor="#FCE4D6", edgecolor="#C00000", label="Expenses"),
+                  Patch(facecolor="#FFF3CD", edgecolor="#E8A838", label="Debt repayment"),
+                  Patch(facecolor="#E2F0D9", edgecolor="#006100", label="Surplus")]
+    ax.legend(handles=legend_els, loc="lower center", bbox_to_anchor=(0.5,-0.12), ncol=3, fontsize=8, framealpha=0.9)
+    plt.tight_layout(); st.pyplot(fig); plt.close()
 
-        # Income Allocation insight
-        _inc_pts = []
-        _surpluses = {lbl: max(0, 1 - sc["expenses"]/(sc["income"] if sc["income"] else 1) - rep/(sc["income"] if sc["income"] else 1)) for lbl, sc in zip(scen_labels, scen_clients)}
-        _best_alloc = max(_surpluses, key=_surpluses.get)
-        _worst_alloc = min(_surpluses, key=_surpluses.get)
-        _base_exp_pct = scen_clients[0]["expenses"] / (scen_clients[0]["income"] if scen_clients[0]["income"] else 1) * 100
-        _inc_pts.append(f"Base case allocates {_base_exp_pct:.0f}% to expenses — {'above' if _base_exp_pct > 50 else 'within'} the 50% guideline.")
-        _inc_pts.append(f"{_best_alloc} has the highest surplus ratio at {_surpluses[_best_alloc]*100:.0f}% of income available for reinvestment.")
-        if _surpluses[_best_alloc] != _surpluses[_worst_alloc]:
-            _inc_pts.append(f"Surplus gap between best and worst scenario: {(_surpluses[_best_alloc] - _surpluses[_worst_alloc])*100:.0f} percentage points of income.")
-        render_insight(_inc_pts)
+    _inc_pts = []
+    _surpluses = {lbl: max(0, 1 - sc["expenses"]/(sc["income"] if sc["income"] else 1) - rep/(sc["income"] if sc["income"] else 1)) for lbl, sc in zip(scen_labels, scen_clients)}
+    _best_alloc = max(_surpluses, key=_surpluses.get)
+    _worst_alloc = min(_surpluses, key=_surpluses.get)
+    _base_exp_pct = scen_clients[0]["expenses"] / (scen_clients[0]["income"] if scen_clients[0]["income"] else 1) * 100
+    _inc_pts.append(f"Base case allocates {_base_exp_pct:.0f}% to expenses — {'above' if _base_exp_pct > 50 else 'within'} the 50% guideline.")
+    _inc_pts.append(f"{_best_alloc} has the highest surplus ratio at {_surpluses[_best_alloc]*100:.0f}% of income available for reinvestment.")
+    if _surpluses[_best_alloc] != _surpluses[_worst_alloc]:
+        _inc_pts.append(f"Surplus gap between best and worst scenario: {(_surpluses[_best_alloc] - _surpluses[_worst_alloc])*100:.0f} percentage points of income.")
+    render_insight(_inc_pts)
 
-    with _sc_col2:
-        fig, ax = plt.subplots(figsize=(7, 6))
-        yrs_idx = bs_proj.index
-        assets_s = bs_proj["Assets"] / 1e6
-        liab_s   = bs_proj["Liabilities"] / 1e6
-        nw_s     = bs_proj["Net Worth"] / 1e6
-        ax.fill_between(yrs_idx, 0, assets_s, alpha=0.15, color=NAVY)
-        ax.fill_between(yrs_idx, 0, liab_s,   alpha=0.15, color="#C00000")
-        ax.plot(yrs_idx, assets_s, color=NAVY,     linewidth=3,   label="Total assets")
-        ax.plot(yrs_idx, liab_s,   color="#C00000", linewidth=2.5, linestyle="--", label="Total liabilities")
-        ax.plot(yrs_idx, nw_s,     color=TEAL,     linewidth=3,   label="Net position")
-        ax.axhline(0, color="#ccc", linewidth=0.8)
-        crossover = next((y for y in yrs_idx if bs_proj.loc[y,"Net Worth"] > 0), None)
-        if crossover is not None:
-            ax.axvline(crossover, color=TEAL, linewidth=1, linestyle=":")
-            y_ann = float(nw_s.max()) * 0.18
-            ax.annotate("Net positive", xy=(crossover, 0),
-                        xytext=(crossover+max(1,yrs*0.05), y_ann),
-                        fontsize=9, color=TEAL,
-                        arrowprops=dict(arrowstyle="->", color=TEAL, lw=1))
-        ax.set_title("Balance Sheet Dynamics — Base Case", fontweight="bold", color=NAVY, pad=8, fontsize=11)
-        ax.set_xlabel("Year", color=NAVY)
-        ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x,_: f"${x:.1f}M"))
-        ax.legend(loc="lower right", fontsize=9, framealpha=0.9)
-        plt.tight_layout(); st.pyplot(fig); plt.close()
+    # ── Balance Sheet Dynamics (full width) ──────────────────────
+    fig, ax = plt.subplots(figsize=(14, 6))
+    yrs_idx = bs_proj.index
+    assets_s = bs_proj["Assets"] / 1e6
+    liab_s   = bs_proj["Liabilities"] / 1e6
+    nw_s     = bs_proj["Net Worth"] / 1e6
+    ax.fill_between(yrs_idx, 0, assets_s, alpha=0.15, color=NAVY)
+    ax.fill_between(yrs_idx, 0, liab_s,   alpha=0.15, color="#C00000")
+    ax.plot(yrs_idx, assets_s, color=NAVY,     linewidth=3,   label="Total assets")
+    ax.plot(yrs_idx, liab_s,   color="#C00000", linewidth=2.5, linestyle="--", label="Total liabilities")
+    ax.plot(yrs_idx, nw_s,     color=TEAL,     linewidth=3,   label="Net position")
+    ax.axhline(0, color="#ccc", linewidth=0.8)
+    crossover = next((y for y in yrs_idx if bs_proj.loc[y,"Net Worth"] > 0), None)
+    if crossover is not None:
+        ax.axvline(crossover, color=TEAL, linewidth=1, linestyle=":")
+        y_ann = float(nw_s.max()) * 0.18
+        ax.annotate("Net positive", xy=(crossover, 0),
+                    xytext=(crossover+max(1,yrs*0.05), y_ann),
+                    fontsize=9, color=TEAL,
+                    arrowprops=dict(arrowstyle="->", color=TEAL, lw=1))
+    ax.set_title("Balance Sheet Dynamics — Base Case", fontweight="bold", color=NAVY, pad=8, fontsize=11)
+    ax.set_xlabel("Year", color=NAVY)
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x,_: f"${x:.1f}M"))
+    ax.legend(loc="lower right", fontsize=9, framealpha=0.9)
+    plt.tight_layout(); st.pyplot(fig); plt.close()
 
-        # Balance Sheet insight
-        render_insight(generate_insight("balance",
-            br,s1r,s2r,bp,s1p,s2p,s1_type,s2_type,
-            yrs,income,expenses,rep,cash,debt,super_bal))
+    render_insight(generate_insight("balance",
+        br,s1r,s2r,bp,s1p,s2p,s1_type,s2_type,
+        yrs,income,expenses,rep,cash,debt,super_bal))
 
     # ── Row 1b: Cash Flow Funnel (full width) ────────────────────
     reinvestable = max(0, income - expenses - rep)
