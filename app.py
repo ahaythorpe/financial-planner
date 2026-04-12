@@ -49,6 +49,7 @@ html,body,[class*="css"]{font-family:'DM Sans',sans-serif;}
 .word-table tr.divider td{border:none;padding:2px 0;}
 .cell-pos{background:#E2F0D9!important;color:#006100!important;font-weight:500;}
 .cell-neg{background:#FCE4D6!important;color:#C00000!important;font-weight:500;}
+.cell-zero{background:#F5F5F5!important;color:#999!important;}
 .demo-banner{background:#EFF6FF;border:1px solid #BFDBFE;border-radius:8px;padding:.75rem 1rem;margin-bottom:1rem;font-size:13px;color:#1E40AF;}
 </style>
 """, unsafe_allow_html=True)
@@ -170,20 +171,22 @@ def fmt(v):
     if v is None or (isinstance(v,float) and np.isnan(v)): return ""
     return f"${v:,.0f}" if v>=0 else f"(${abs(v):,.0f})"
 
-def cc(v):
+def cc(v, zero_neutral=True):
     if not isinstance(v,(int,float)) or np.isnan(v): return ""
-    return "cell-pos" if v>0 else "cell-neg" if v<0 else ""
+    if v > 0: return "cell-pos"
+    if v < 0: return "cell-neg"
+    return "" if zero_neutral else "cell-pos"
 
 def render_insight(points):
-    items = "".join(f"<li>{p}</li>" for p in points if p.strip())
+    items = "".join(f"<li style='margin-bottom:8px'>{p}</li>" for p in points if p.strip())
     st.markdown(f"""<div style='background:#F8F7F4;
 border-left:4px solid #1B2E4B;padding:1rem 1.25rem;
-border-radius:0 8px 8px 0;font-size:13px;color:#1B2E4B;
-margin-top:1rem;line-height:1.9'><span style='font-size:10px;
+border-radius:0 8px 8px 0;font-size:16px;color:#1B2E4B;
+margin-top:1rem;line-height:1.9'><span style='font-size:12px;
 text-transform:uppercase;letter-spacing:.08em;color:#888;
 display:block;margin-bottom:8px'>Planning observations</span>
 <ul style='margin:0;padding-left:1.2rem'>{items}</ul></div>
-<p style='font-size:11px;color:#aaa;margin-top:4px'>
+<p style='font-size:13px;color:#aaa;margin-top:4px'>
 For planner reference only — not personal financial advice.
 </p>""", unsafe_allow_html=True)
 
@@ -242,11 +245,25 @@ def generate_insight(section, br, s1r, s2r,
         if gap > 0:
             pts.append(f"Gap between best and worst scenario: ${gap/1e6:.2f}M — compounding amplifies early differences.")
         if s1_y > base_y and s2_y > base_y:
-            pts.append("Both strategies improve on base case — consider which best matches client priorities.")
+            pts.append(f"Both strategies beat base case — {s1_type} by ${(s1_y-base_y)/1e6:.2f}M, {s2_type} by ${(s2_y-base_y)/1e6:.2f}M at year {yrs}.")
         elif s1_y > s2_y:
-            pts.append(f"{s1_type} outperforms {s2_type} over the full projection horizon.")
+            pts.append(f"{s1_type} outperforms {s2_type} by ${(s1_y-s2_y)/1e6:.2f}M at year {yrs}.")
         else:
-            pts.append(f"{s2_type} outperforms {s1_type} over the full projection horizon.")
+            pts.append(f"{s2_type} outperforms {s1_type} by ${(s2_y-s1_y)/1e6:.2f}M at year {yrs}.")
+        base_sr = br["savings_rate"]
+        s1_sr = s1r["savings_rate"]
+        s2_sr = s2r["savings_rate"]
+        best_sr_n = s1_type if s1_sr > s2_sr else s2_type
+        best_sr_v = max(s1_sr, s2_sr)
+        if best_sr_v > base_sr:
+            pts.append(f"{best_sr_n} improves savings rate from {base_sr*100:.1f}% to {best_sr_v*100:.1f}% — an extra ${(best_sr_v-base_sr)*income:,.0f} reinvested annually.")
+        base_dta = br["debt_to_assets"]*100
+        s1_dta = s1r["debt_to_assets"]*100
+        s2_dta = s2r["debt_to_assets"]*100
+        best_dta_n = s1_type if s1_dta < s2_dta else s2_type
+        best_dta_v = min(s1_dta, s2_dta)
+        if best_dta_v < base_dta:
+            pts.append(f"{best_dta_n} reduces leverage from {base_dta:.0f}% to {best_dta_v:.0f}% debt-to-assets — improving financial resilience.")
         return pts
     elif section == "summary":
         net    = br["net_position"]
@@ -274,6 +291,57 @@ def generate_insight(section, br, s1r, s2r,
         else:
             pts.append("Priority action: review superannuation contribution strategy to maximise tax-effective wealth.")
         pts.append("These observations are for planner reference only and do not constitute personal financial advice.")
+        return pts
+    elif section == "soa_intro":
+        net    = br["net_position"]
+        sur    = br["surplus"]
+        sr     = br["savings_rate"]
+        em     = br["emergency_months"]
+        dta    = br["debt_to_assets"] * 100
+        best_v = max(bp.iloc[-1]["Net Worth"], s1p.iloc[-1]["Net Worth"], s2p.iloc[-1]["Net Worth"])
+        best_n = ("Base Case" if best_v == bp.iloc[-1]["Net Worth"]
+                  else s1_type if best_v == s1p.iloc[-1]["Net Worth"] else s2_type)
+        stage  = "accumulation" if income > 0 else "retirement drawdown"
+        intro  = (
+            f"{client_name} is currently in the {stage} phase with a "
+            f"{'net deficit' if net < 0 else 'net positive position'} of {fmt(abs(net))}. "
+            f"Annual income of {fmt(income)} generates a surplus of {fmt(sur)}, "
+            f"representing a savings rate of {sr*100:.1f}%. "
+        )
+        if em < 3:
+            intro += f"Emergency reserves stand at {em:.1f} months — below the recommended 3-month minimum. "
+        if dta > 70:
+            intro += f"Debt represents {dta:.0f}% of total assets, reflecting an active mortgage position. "
+        intro += (
+            f"Across the scenarios modelled, {best_n} produces the strongest long-term outcome, "
+            f"projecting {fmt(best_v)} in net worth by year {yrs}. "
+            f"This analysis is based on a {gr*100:.1f}% annual growth rate, "
+            f"{sg*100:.1f}% superannuation guarantee, and ${rep:,} annual debt repayment."
+        )
+        return [intro]
+    elif section == "soa_conclusion":
+        net    = br["net_position"]
+        sur    = br["surplus"]
+        sr     = br["savings_rate"]
+        em     = br["emergency_months"]
+        dta    = br["debt_to_assets"] * 100
+        best_v = max(bp.iloc[-1]["Net Worth"], s1p.iloc[-1]["Net Worth"], s2p.iloc[-1]["Net Worth"])
+        best_n = ("Base Case" if best_v == bp.iloc[-1]["Net Worth"]
+                  else s1_type if best_v == s1p.iloc[-1]["Net Worth"] else s2_type)
+        pts = []
+        pts.append(
+            f"Based on the modelling presented, {client_name}'s financial position is "
+            f"{'developing as expected for the accumulation stage' if net < 0 else 'healthy with assets exceeding liabilities'}. "
+            f"The {best_n} strategy is recommended as the strongest long-term pathway, "
+            f"projecting {fmt(best_v)} by year {yrs}."
+        )
+        if em < 3:
+            pts.append(f"The most immediate priority is building emergency reserves from {em:.1f} months to 3 months (approximately {fmt(int(expenses/4))}).")
+        if sr < 0.15:
+            pts.append(f"A savings rate of {sr*100:.1f}% limits accumulation velocity. Reviewing discretionary expenses or increasing income should be explored.")
+        if dta > 70:
+            pts.append(f"Leverage of {dta:.0f}% is within expected range for this life stage but warrants monitoring as interest rates change.")
+        pts.append("All projections are indicative only. This analysis does not constitute personal financial advice. The client should consider obtaining a Statement of Advice from a licensed financial adviser.")
         return pts
     return []
 
@@ -436,10 +504,10 @@ st.markdown(f"""
 </div>""", unsafe_allow_html=True)
 
 # ── Tabs ─────────────────────────────────────────────────────────
-t_about, t_dash, t_scen, t_shock, t_proj, t_life, t_leg, t_report = st.tabs([
-    "About", "Client Dashboard", "Scenario Analysis",
+t_about, t_demo, t_dash, t_scen, t_shock, t_proj, t_life, t_leg, t_model, t_report = st.tabs([
+    "About", "Demo", "Client Dashboard", "Scenario Analysis",
     "Shock Analysis", "Projection", "Life Stage",
-    "Legislation", "Report"])
+    "Legislation", "Model & Limitations", "Report"])
 
 # ════════════════════════════════════════════════════════════════
 # ABOUT TAB
@@ -553,6 +621,220 @@ Sarah and Daniel are locked and cannot be edited. Switch to **New Client** in th
         """)
 
 # ════════════════════════════════════════════════════════════════
+# DEMO TAB
+# ════════════════════════════════════════════════════════════════
+with t_demo:
+    st.markdown("### Model Demo — What Each Phase Shows")
+    st.caption("This page walks through each phase of the model using fixed demo clients. Switch to New Client in the sidebar to use your own figures.")
+
+    # ── PHASE 1 — ACCUMULATION ───────────────────────────────────
+    st.markdown("---")
+    st.markdown("## Phase 1 — Accumulation (age 18–49)")
+    st.markdown("""
+**Who this applies to:** Any client who is working and building wealth before retirement.
+
+**What the model does:**
+- Super grows at your selected growth rate + SG contributions (currently 11.5%)
+- Portfolio grows from reinvested surplus (income − expenses − debt repayment)
+- Debt reduces by fixed annual repayment
+- Net worth = super + portfolio + cash − debt
+
+**Demo client — Sarah & Daniel, age 35/37:**
+""")
+    demo_acc = dict(name="Sarah & Daniel", income=160000, expenses=95000,
+                    super_balance=120000, investments=40000, cash=15000, debt=420000)
+    acc_r = calculate_financials(demo_acc)
+    acc_p = project_wealth(demo_acc, 20, 0.07, 0.115, 20000)
+
+    ac1, ac2, ac3, ac4 = st.columns(4)
+    ac1.metric("Net Position", fmt(acc_r["net_position"]))
+    ac2.metric("Annual Surplus", fmt(acc_r["surplus"]))
+    ac3.metric("Savings Rate", f"{acc_r['savings_rate']*100:.1f}%")
+    ac4.metric("Emergency Buffer", f"{acc_r['emergency_months']:.1f} months")
+
+    fig_a, ax_a = plt.subplots(figsize=(14, 5))
+    ax_a.plot(acc_p.index, acc_p["Net Worth"]/1e6, color=NAVY, linewidth=2.5)
+    ax_a.axhline(0, color="#ccc", linewidth=0.8)
+    ax_a.fill_between(acc_p.index, 0, acc_p["Net Worth"]/1e6, where=acc_p["Net Worth"]>0, alpha=0.07, color=NAVY)
+    ax_a.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x,_: f"${x:.1f}M"))
+    ax_a.set_xlabel("Year", color=NAVY)
+    ax_a.set_title("Accumulation Phase — 20-Year Net Worth Projection", fontweight="bold", color=NAVY, fontsize=11)
+    cx_a = next((y for y in acc_p.index if acc_p.loc[y,"Net Worth"]>0), None)
+    if cx_a:
+        ax_a.axvline(cx_a, color=TEAL, linewidth=1, linestyle=":")
+        ax_a.annotate(f"Net positive year {cx_a}", xy=(cx_a,0), xytext=(cx_a+0.5, acc_p["Net Worth"].max()/1e6*0.15), fontsize=8, color=TEAL, arrowprops=dict(arrowstyle="->", color=TEAL, lw=1))
+    ax_a.annotate(f"  ${acc_p.iloc[-1]['Net Worth']/1e6:.2f}M", xy=(acc_p.index[-1], acc_p.iloc[-1]["Net Worth"]/1e6), fontsize=9, fontweight="bold", color=NAVY, va="center")
+    plt.tight_layout(); st.pyplot(fig_a); plt.close()
+    st.caption("Debt is $420,000. Net worth turns negative early then accelerates as debt clears and compounding takes over.")
+
+    # ── PHASE 2 — PRE-RETIREMENT ─────────────────────────────────
+    st.markdown("---")
+    st.markdown("## Phase 2 — Pre-Retirement Readiness (age 50+)")
+    st.markdown("""
+**Who this applies to:** Clients within 15 years of their target retirement age.
+
+**What the model does:**
+- Projects super balance forward to retirement age at selected growth rate + SG
+- Calculates target super needed = desired retirement income ÷ 4% (safe withdrawal rate)
+- Shows readiness gap and years of extra contributions needed to close it
+- Does NOT include Age Pension, catch-up contributions, or salary sacrifice optimisation
+
+**Demo client — Margaret, age 55, retiring at 67, target income $80,000 p.a.:**
+""")
+    demo_pre = dict(name="Margaret", income=120000, expenses=70000,
+                    super_balance=380000, investments=60000, cash=25000, debt=180000)
+    pre_r = calc_pre_retirement(demo_pre, 55, 67, 80000, 0.07, 0.115, 15000)
+
+    pc1, pc2, pc3 = st.columns(3)
+    pc1.metric("Projected super at 67", fmt(pre_r["projected_super"]))
+    pc2.metric("Target needed (÷4%)", fmt(pre_r["target_super_needed"]))
+    gap_v = pre_r["readiness_gap"]
+    pc3.metric("Readiness gap", fmt(gap_v), delta="On track" if gap_v>=0 else f"{pre_r['years_to_close']:.1f} yrs to close", delta_color="normal" if gap_v>=0 else "inverse")
+
+    if pre_r["on_track"]:
+        st.success(f"Margaret is on track. Projected super exceeds target by {fmt(pre_r['readiness_gap'])}.")
+    else:
+        st.error(f"Shortfall of {fmt(abs(pre_r['readiness_gap']))}. At current SG rate approximately {pre_r['years_to_close']:.1f} additional years needed.")
+    st.markdown("""
+    <div style='background:#E2F0D9;border-radius:10px;padding:1rem 1.25rem;margin:12px 0;border:1px solid #9FE1CB'>
+    <div style='font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#0F6E56;margin-bottom:6px'>About this demo — Pre-Retirement Phase</div>
+    <div style='font-size:14px;color:#1B2E4B;line-height:1.8'>
+    These are <strong>fixed demo figures for Margaret, age 55</strong> — they do not change with the sidebar.<br>
+    This phase activates automatically when you set <strong>client age to 50+</strong> in the Life Stage tab.<br>
+    The model projects super forward to retirement age using growth rate + SG contributions, then compares against the <strong>4% rule target</strong> (desired income ÷ 0.04 = super needed).<br>
+    <strong>Target:</strong> $80,000 ÷ 4% = $2,000,000 needed. The gap or surplus shown is the readiness check.<br>
+    <strong>Not included:</strong> Age Pension, catch-up contributions, salary sacrifice, contributions tax.<br>
+    Switch to <strong>New Client</strong> and set age 50+ to run this for a real client.
+    </div></div>
+    """, unsafe_allow_html=True)
+
+    pre_p = project_wealth(demo_pre, 12, 0.07, 0.115, 15000)
+    fig_p, ax_p = plt.subplots(figsize=(14, 5))
+    ax_p.plot(pre_p.index, pre_p["Net Worth"]/1e6, color=S1_COLOR, linewidth=2.5, label="Net Worth")
+    ax_p.axhline(pre_r["target_super_needed"]/1e6, color=TEAL, linewidth=1.5, linestyle="--", label=f"Super target ${pre_r['target_super_needed']/1e6:.2f}M")
+    ax_p.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x,_: f"${x:.1f}M"))
+    ax_p.set_xlabel("Year (0 = age 55, 12 = age 67)", color=NAVY)
+    ax_p.set_title("Pre-Retirement — Net Worth vs Target", fontweight="bold", color=NAVY, fontsize=11)
+    ax_p.legend(fontsize=9, framealpha=0.9)
+    plt.tight_layout(); st.pyplot(fig_p); plt.close()
+
+    # ── PHASE 3 — RETIREMENT DRAWDOWN ────────────────────────────
+    st.markdown("---")
+    st.markdown("## Phase 3 — Retirement Drawdown (age 65+)")
+    st.markdown("""
+**Who this applies to:** Clients who have stopped working and are drawing down accumulated assets.
+
+**What the model does:**
+- Applies 4% drawdown rule: assets × 4% = sustainable annual income
+- Projects assets year by year: `assets × 1.07 − income drawn`
+- Shows asset depletion year if desired income exceeds sustainable income
+- Age Pension NOT modelled — must be assessed separately
+
+**Demo client — Robert & Jan, age 67, $1.2M total assets, desired income $90,000 p.a.:**
+""")
+    demo_ret = dict(name="Robert & Jan", income=0, expenses=90000,
+                    super_balance=900000, investments=200000, cash=100000, debt=0)
+    ret_r = calc_retirement_drawdown(demo_ret, drawdown_rate=0.04, desired_income=90000, gr=0.07, years=25)
+
+    rc1, rc2, rc3 = st.columns(3)
+    rc1.metric("Sustainable income (4%)", fmt(ret_r["sustainable_income"]))
+    rc2.metric("Desired income", fmt(ret_r["desired_income"]))
+    shortfall = ret_r["shortfall"]
+    rc3.metric("Surplus / shortfall", fmt(shortfall), delta="Sustainable" if shortfall>=0 else "Shortfall", delta_color="normal" if shortfall>=0 else "inverse")
+
+    if ret_r["on_track"]:
+        st.success("Assets sufficient — no depletion projected over 25-year drawdown period.")
+    else:
+        st.error(f"Assets depleted in year {ret_r['depleted_year']}. Consider reducing drawdown rate or supplementing with Age Pension.")
+
+    ret_proj = ret_r["projection"]
+    fig_r, ax_r = plt.subplots(figsize=(14, 5))
+    ax_r.plot(ret_proj.index, ret_proj["Assets"]/1e6, color=NAVY, linewidth=2.5, label="Remaining assets")
+    ax_r.axhline(0, color="#C00000", linewidth=0.8, linestyle="--")
+    ax_r.fill_between(ret_proj.index, 0, ret_proj["Assets"]/1e6, alpha=0.07, color=NAVY)
+    ax_r.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x,_: f"${x:.1f}M"))
+    ax_r.set_xlabel("Year in retirement", color=NAVY)
+    ax_r.set_title("Retirement Drawdown — Asset Depletion Projection", fontweight="bold", color=NAVY, fontsize=11)
+    ax_r.legend(fontsize=9, framealpha=0.9)
+    plt.tight_layout(); st.pyplot(fig_r); plt.close()
+    st.markdown("""
+    <div style='background:#FAEEDA;border-radius:10px;padding:1rem 1.25rem;margin:12px 0;border:1px solid #FAC775'>
+    <div style='font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#854F0B;margin-bottom:6px'>About this demo — Retirement Drawdown Phase</div>
+    <div style='font-size:14px;color:#1B2E4B;line-height:1.8'>
+    These are <strong>fixed demo figures for Robert & Jan, age 67</strong> — they do not change with the sidebar.<br>
+    This phase activates automatically when you set <strong>client age to 65+</strong> in the Life Stage tab.<br>
+    The model runs assets through <strong>assets × 1.07 − income drawn</strong> each year until depletion or 25 years.<br>
+    <strong>4% rule:</strong> $1.2M × 4% = $48,000 sustainable income. Robert & Jan want $90,000 — a $42,000 shortfall.<br>
+    The chart shows how long assets last at that drawdown rate before depletion.<br>
+    <strong>Not included:</strong> Age Pension (critical for this client), inflation, minimum drawdown rates, tax.<br>
+    Switch to <strong>New Client</strong> and set age 65+ to run this for a real client.
+    </div></div>
+    """, unsafe_allow_html=True)
+
+    # ── PHASE 4 — PENSION PHASE (PARTIAL) ────────────────────────
+    st.markdown("---")
+    st.markdown("## Phase 4 — Pension Phase (partial)")
+
+    MIN_DRAWDOWN = {(0,64):0.04,(65,74):0.05,(75,79):0.06,(80,84):0.07,(85,89):0.09,(90,94):0.11,(95,120):0.14}
+    def get_min_drawdown(age):
+        for (lo,hi),rate in MIN_DRAWDOWN.items():
+            if lo <= age <= hi: return rate
+        return 0.04
+
+    TRANSFER_BALANCE_CAP = 1_900_000
+
+    if older_age >= 60:
+        st.markdown(f"**Client age {older_age} — pension phase rules apply**")
+        pension_assets = float(super_bal) + float(invest) + float(cash)
+        min_dr = get_min_drawdown(older_age)
+        min_income = round(pension_assets * min_dr)
+        tbc_excess = max(0, pension_assets - TRANSFER_BALANCE_CAP)
+
+        pp1, pp2, pp3 = st.columns(3)
+        pp1.metric("Total pension assets", fmt(round(pension_assets)))
+        pp2.metric(f"Min drawdown at age {older_age} ({min_dr*100:.0f}%)", fmt(min_income))
+        pp3.metric("Transfer Balance Cap excess", fmt(round(tbc_excess)), delta="Within cap" if tbc_excess==0 else "Exceeds cap — review required", delta_color="normal" if tbc_excess==0 else "inverse")
+
+        if tbc_excess > 0:
+            st.error(f"Assets of {fmt(round(pension_assets))} exceed the Transfer Balance Cap of $1.9M by {fmt(round(tbc_excess))}. Excess must remain in accumulation phase (taxed at 15%) or be withdrawn. Seek licensed advice.")
+        else:
+            st.success(f"Assets are within the $1.9M Transfer Balance Cap. All {fmt(round(pension_assets))} can move to pension phase at 0% earnings tax.")
+
+        st.caption(f"Minimum drawdown at age {older_age} is {min_dr*100:.0f}% = {fmt(min_income)} p.a. This is a legislative minimum — actual drawdown may be higher based on lifestyle needs.")
+
+        st.markdown("""
+**What is and is not modelled here:**
+- ✓ Minimum drawdown rate calculated by age
+- ✓ Transfer Balance Cap check against current assets
+- ✗ Tax saving from 15% → 0% earnings tax not quantified
+- ✗ Age Pension interaction not modelled
+- ✗ Death benefit nominations not modelled
+- ✗ Estate planning not modelled
+        """)
+    else:
+        st.markdown("""
+    <div style='background:#FCE4D6;border-radius:10px;padding:1rem 1.25rem;margin:12px 0;border:1px solid #F0997B'>
+    <div style='font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#993C1D;margin-bottom:6px'>About this demo — Pension Phase (partial)</div>
+    <div style='font-size:14px;color:#1B2E4B;line-height:1.8'>
+    This phase is <strong>partially built</strong> — minimum drawdown rates and Transfer Balance Cap check are live.<br>
+    It activates automatically when you set <strong>client age to 60+</strong> in the Life Stage tab.<br>
+    <strong>What works now:</strong> minimum drawdown % by age, Transfer Balance Cap check against $1.9M.<br>
+    <strong>Not yet built:</strong> 0% earnings tax in pension phase, Age Pension means testing, death benefits, estate planning.<br>
+    Full pension phase modelling requires significant additional build — see Model & Limitations tab for detail.<br>
+    Switch to <strong>New Client</strong> and set age 60+ to see the partial pension phase for a real client.
+    </div></div>
+    """, unsafe_allow_html=True)
+        st.info("""
+**Not yet relevant — pension phase unlocks at age 60.**
+
+When built fully this will cover:
+- Transfer Balance Cap tracking ($1.9M)
+- Minimum drawdown rates by age (4% → 14%)
+- Tax switch from 15% accumulation to 0% pension phase
+- Age Pension means testing interaction
+        """)
+
+# ════════════════════════════════════════════════════════════════
 # CLIENT DASHBOARD
 # ════════════════════════════════════════════════════════════════
 with t_dash:
@@ -637,10 +919,10 @@ with t_scen:
     html = f'<table class="word-table"><thead><tr><th>Metric</th>{th}</tr></thead><tbody>'
     for label,kind,key in comp_rows:
         bv = br[key]
-        cells = f'<td class="{cc(bv) if kind=="currency" else ""}">{fmtc(bv,kind)}</td>'
+        cells = f'<td class="{cc(bv)}">{fmtc(bv,kind)}</td>'
         for r in all_results:
             v = r[key]
-            cells += f'<td class="{cc(v) if kind=="currency" else ""}">{fmtc(v,kind)}</td>'
+            cells += f'<td class="{cc(v)}">{fmtc(v,kind)}</td>'
         html += f'<tr><td>{label}</td>{cells}</tr>'
     html += '</tbody></table>'
     st.markdown(html, unsafe_allow_html=True)
@@ -656,11 +938,11 @@ with t_scen:
     scen_colors  = [NAVY, S1_COLOR, TEAL] + EXTRA_COLORS[:len(extras)]
     scen_projs   = [bp, s1p, s2p] + [ep for _,_,ep in extra_outputs]
 
-    col_a, col_b = st.columns(2)
-
-    with col_a:
-        from matplotlib.patches import Patch
-        fig, ax = plt.subplots(figsize=(14, max(4, 0.9*len(scen_labels))))
+    # ── Row 1: Income Composition | Balance Sheet Dynamics ──────
+    from matplotlib.patches import Patch
+    _sc_col1, _sc_col2 = st.columns(2)
+    with _sc_col1:
+        fig, ax = plt.subplots(figsize=(7, max(4, 0.9*len(scen_labels))))
         for i, sc in enumerate(scen_clients):
             inc = sc["income"] if sc["income"] else 1
             exp_pct = sc["expenses"] / inc
@@ -670,35 +952,35 @@ with t_scen:
             ax.barh(i, rep_pct, left=exp_pct, color="#FFF3CD", edgecolor="#E8A838", linewidth=0.8, zorder=3)
             ax.barh(i, sur_pct, left=exp_pct+rep_pct, color="#E2F0D9", edgecolor="#006100", linewidth=0.8, zorder=3)
             if exp_pct > 0.08:
-                ax.text(exp_pct/2, i, f"{exp_pct*100:.0f}%", ha="center", va="center", fontsize=7, color="#C00000", fontweight="bold")
+                ax.text(exp_pct/2, i, f"{exp_pct*100:.0f}%", ha="center", va="center", fontsize=8, color="#C00000", fontweight="bold")
             if rep_pct > 0.08:
-                ax.text(exp_pct+rep_pct/2, i, f"{rep_pct*100:.0f}%", ha="center", va="center", fontsize=7, color="#7a5c00", fontweight="bold")
+                ax.text(exp_pct+rep_pct/2, i, f"{rep_pct*100:.0f}%", ha="center", va="center", fontsize=8, color="#7a5c00", fontweight="bold")
             if sur_pct > 0.08:
-                ax.text(exp_pct+rep_pct+sur_pct/2, i, f"{sur_pct*100:.0f}%", ha="center", va="center", fontsize=7, color="#006100", fontweight="bold")
+                ax.text(exp_pct+rep_pct+sur_pct/2, i, f"{sur_pct*100:.0f}%", ha="center", va="center", fontsize=8, color="#006100", fontweight="bold")
         ax.axvline(0.9, color=NAVY, linewidth=1, linestyle=":", zorder=4)
-        ax.text(0.905, len(scen_labels)-0.55, "10% min", fontsize=7, color=NAVY, va="top")
+        ax.text(0.905, len(scen_labels)-0.55, "10% min", fontsize=8, color=NAVY, va="top")
         ax.set_yticks(range(len(scen_labels)))
-        ax.set_yticklabels(scen_labels, fontsize=8)
+        ax.set_yticklabels(scen_labels, fontsize=9)
         ax.set_xlim(0, 1.05)
         ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x,_: f"{x*100:.0f}%"))
-        ax.set_title("Income Allocation by Scenario", fontweight="bold", color=NAVY, pad=8, fontsize=10)
+        ax.set_title("Income Allocation by Scenario", fontweight="bold", color=NAVY, pad=8, fontsize=11)
         legend_els = [Patch(facecolor="#FCE4D6", edgecolor="#C00000", label="Expenses"),
                       Patch(facecolor="#FFF3CD", edgecolor="#E8A838", label="Debt repayment"),
                       Patch(facecolor="#E2F0D9", edgecolor="#006100", label="Surplus")]
-        ax.legend(handles=legend_els, loc="lower center", bbox_to_anchor=(0.5,-0.18), ncol=3, fontsize=7, framealpha=0.9)
+        ax.legend(handles=legend_els, loc="lower center", bbox_to_anchor=(0.5,-0.12), ncol=3, fontsize=8, framealpha=0.9)
         plt.tight_layout(); st.pyplot(fig); plt.close()
 
-    with col_b:
-        fig, ax = plt.subplots(figsize=(14, 6))
+    with _sc_col2:
+        fig, ax = plt.subplots(figsize=(7, 6))
         yrs_idx = bs_proj.index
         assets_s = bs_proj["Assets"] / 1e6
         liab_s   = bs_proj["Liabilities"] / 1e6
         nw_s     = bs_proj["Net Worth"] / 1e6
         ax.fill_between(yrs_idx, 0, assets_s, alpha=0.15, color=NAVY)
         ax.fill_between(yrs_idx, 0, liab_s,   alpha=0.15, color="#C00000")
-        ax.plot(yrs_idx, assets_s, color=NAVY,     linewidth=2,   label="Total assets")
-        ax.plot(yrs_idx, liab_s,   color="#C00000", linewidth=2,   linestyle="--", label="Total liabilities")
-        ax.plot(yrs_idx, nw_s,     color=TEAL,     linewidth=2.5, label="Net position")
+        ax.plot(yrs_idx, assets_s, color=NAVY,     linewidth=3,   label="Total assets")
+        ax.plot(yrs_idx, liab_s,   color="#C00000", linewidth=2.5, linestyle="--", label="Total liabilities")
+        ax.plot(yrs_idx, nw_s,     color=TEAL,     linewidth=3,   label="Net position")
         ax.axhline(0, color="#ccc", linewidth=0.8)
         crossover = next((y for y in yrs_idx if bs_proj.loc[y,"Net Worth"] > 0), None)
         if crossover is not None:
@@ -706,16 +988,17 @@ with t_scen:
             y_ann = float(nw_s.max()) * 0.18
             ax.annotate("Net positive", xy=(crossover, 0),
                         xytext=(crossover+max(1,yrs*0.05), y_ann),
-                        fontsize=8, color=TEAL,
+                        fontsize=9, color=TEAL,
                         arrowprops=dict(arrowstyle="->", color=TEAL, lw=1))
-        ax.set_title("Balance Sheet Dynamics — Base Case", fontweight="bold", color=NAVY, pad=8, fontsize=10)
+        ax.set_title("Balance Sheet Dynamics — Base Case", fontweight="bold", color=NAVY, pad=8, fontsize=11)
         ax.set_xlabel("Year", color=NAVY)
         ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x,_: f"${x:.1f}M"))
-        ax.legend(loc="lower right", fontsize=8, framealpha=0.9)
+        ax.legend(loc="lower right", fontsize=9, framealpha=0.9)
         plt.tight_layout(); st.pyplot(fig); plt.close()
-        render_insight(generate_insight("balance",
-            br,s1r,s2r,bp,s1p,s2p,s1_type,s2_type,
-            yrs,income,expenses,rep,cash,debt,super_bal))
+
+    render_insight(generate_insight("balance",
+        br,s1r,s2r,bp,s1p,s2p,s1_type,s2_type,
+        yrs,income,expenses,rep,cash,debt,super_bal))
 
     # ── Row 1b: Cash Flow Funnel (full width) ────────────────────
     reinvestable = max(0, income - expenses - rep)
@@ -724,9 +1007,9 @@ with t_scen:
     rep_pct_b    = rep / income * 100 if income else 0
     sur_pct_b    = reinvestable / income * 100 if income else 0
     stages = [
-        ("Gross income",   income,       NAVY),
-        ("After expenses", after_exp,    S1_COLOR),
         ("Reinvestable",   reinvestable, TEAL),
+        ("After expenses", after_exp,    S1_COLOR),
+        ("Gross income",   income,       NAVY),
     ]
     fig_f, ax_f = plt.subplots(figsize=(14, 3))
     for i, (label, val, clr) in enumerate(stages):
@@ -776,14 +1059,19 @@ with t_scen:
     bar_w = min(0.8/n_sc, 0.25)
     x_pos = np.arange(len(milestones_c))
     fig, ax = plt.subplots(figsize=(14, 6))
+    ax.set_facecolor("white")
+    ax.yaxis.grid(True, color="#E5E7EB", linewidth=0.8, zorder=0)
+    ax.set_axisbelow(True)
     for i, (proj, lbl, clr) in enumerate(zip(scen_projs, scen_labels, scen_colors)):
         vals = [proj.loc[y,"Net Worth"]/1e6 if y in proj.index else 0 for y in milestones_c]
         offset = (i - n_sc/2 + 0.5) * bar_w
         b3 = ax.bar(x_pos+offset, vals, width=bar_w*0.9, color=clr, label=lbl, zorder=3)
         for bar,v in zip(b3, vals):
-            ax.text(bar.get_x()+bar.get_width()/2, bar.get_height()+0.01,
+            ypos = bar.get_height() + 0.04 if v >= 0 else bar.get_height() - 0.12
+            ax.text(bar.get_x()+bar.get_width()/2, ypos,
                     f"${v:.1f}M", ha="center", va="bottom",
-                    fontsize=6.5, fontweight="bold", color=clr, rotation=40)
+                    fontsize=9, fontweight="bold", color="white" if v < 0 else NAVY,
+                    rotation=0, bbox=dict(boxstyle="round,pad=0.2", fc="white", ec=clr, lw=0.8, alpha=0.85))
     ax.set_xticks(x_pos)
     ax.set_xticklabels([f"Year {y}" for y in milestones_c], fontsize=9)
     ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x,_: f"${x:.1f}M"))
@@ -817,22 +1105,25 @@ with t_scen:
         f"{badges}</div>",unsafe_allow_html=True)
     st.markdown("---")
 
-    # PANEL 1 — Asset mix
-    st.markdown("#### Asset composition")
+    # PANEL 1-3 — side by side summary row
+    st.markdown("#### Key metrics at a glance")
+    ec1, ec2, ec3 = st.columns(3)
+    with ec1:
+        st.markdown("##### Asset mix")
+        fig,ax=plt.subplots(figsize=(5,4))
+        ax.pie([super_bal,invest,cash],
+            labels=["Super","Investments","Cash"],
+            colors=[NAVY,S1_COLOR,TEAL],
+            autopct="%1.0f%%",startangle=90,
+            wedgeprops={"linewidth":1.5,"edgecolor":"white"},
+            textprops={"fontsize":11})
+        ax.set_title("Asset Mix — Base Case",
+            fontweight="bold",color=NAVY,pad=10,fontsize=11)
+        plt.tight_layout(); st.pyplot(fig); plt.close()
     ta=br["total_assets"]
     sp_pct=super_bal/ta*100 if ta else 0
     in_pct=invest/ta*100 if ta else 0
     ca_pct=cash/ta*100 if ta else 0
-    fig,ax=plt.subplots(figsize=(14,5))
-    ax.pie([super_bal,invest,cash],
-        labels=["Super","Investments","Cash"],
-        colors=[NAVY,S1_COLOR,TEAL],
-        autopct="%1.0f%%",startangle=90,
-        wedgeprops={"linewidth":1.5,"edgecolor":"white"},
-        textprops={"fontsize":9})
-    ax.set_title("Asset Mix — Base Case",
-        fontweight="bold",color=NAVY,pad=10,fontsize=10)
-    plt.tight_layout(); st.pyplot(fig); plt.close()
     pts1=[]
     if sp_pct>60:
         pts1.append(f"Super dominates at {sp_pct:.0f}% of total assets — high concentration in a single vehicle.")
@@ -845,11 +1136,7 @@ with t_scen:
     if in_pct>0:
         pts1.append(f"Non-super investments ({in_pct:.0f}%) are accessible before preservation age.")
     pts1.append("Consider diversification across vehicles to reduce concentration risk.")
-    render_insight(pts1)
-    st.markdown("---")
-
     # PANEL 2 — Net position by scenario
-    st.markdown("#### Net position by scenario")
     nv=[br["net_position"],s1r["net_position"],
         s2r["net_position"]]+ \
         [eo["results"]["net_position"]
@@ -858,25 +1145,27 @@ with t_scen:
         [e["scenario_name"] for e in extras])
     bc=[BG_NEG if v<0 else BG_POS for v in nv]
     be=[TXT_NEG if v<0 else TXT_POS for v in nv]
-    fig,ax=plt.subplots(figsize=(14,5))
-    bars=ax.bar(nl,nv,color=bc,edgecolor=be,
-        linewidth=1.5,width=0.5,zorder=3)
-    ax.axhline(0,color="#C00000",
-        linewidth=1,linestyle="--")
-    sp=max(abs(v) for v in nv)
-    for bar,v in zip(bars,nv):
-        clr=TXT_POS if v>=0 else TXT_NEG
-        ax.text(bar.get_x()+bar.get_width()/2,
-            v+sp*.05*(1 if v>=0 else -1),
-            fmt(v),ha="center",
-            va="bottom" if v>=0 else "top",
-            fontsize=8,fontweight="bold",color=clr)
-    ax.set_title("Net Position by Scenario",
-        fontweight="bold",color=NAVY,pad=10,fontsize=10)
-    ax.yaxis.set_major_formatter(mticker.FuncFormatter(
-        lambda x,_:f"${x/1000:.0f}k"))
-    plt.xticks(fontsize=8)
-    plt.tight_layout(); st.pyplot(fig); plt.close()
+    with ec2:
+        st.markdown("##### Net position")
+        fig,ax=plt.subplots(figsize=(5,4))
+        bars=ax.bar(nl,nv,color=bc,edgecolor=be,
+            linewidth=1.5,width=0.5,zorder=3)
+        ax.axhline(0,color="#C00000",
+            linewidth=1,linestyle="--")
+        sp=max(abs(v) for v in nv)
+        for bar,v in zip(bars,nv):
+            clr=TXT_POS if v>=0 else TXT_NEG
+            ax.text(bar.get_x()+bar.get_width()/2,
+                v+sp*.05*(1 if v>=0 else -1),
+                fmt(v),ha="center",
+                va="bottom" if v>=0 else "top",
+                fontsize=8,fontweight="bold",color=clr)
+        ax.set_title("Net Position by Scenario",
+            fontweight="bold",color=NAVY,pad=10,fontsize=11)
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(
+            lambda x,_:f"${x/1000:.0f}k"))
+        plt.xticks(fontsize=9)
+        plt.tight_layout(); st.pyplot(fig); plt.close()
     best_n_idx=nv.index(max(nv))
     pts2=[]
     if br["net_position"]<0:
@@ -887,58 +1176,75 @@ with t_scen:
         pts2.append(f"{nl[best_n_idx]} produces the strongest balance sheet outcome at {fmt(max(nv))}.")
     pts2.append("Red bars show negative net worth — expected at accumulation stage with an active mortgage.")
     pts2.append("Net position improves as debt reduces and investments compound over time.")
-    render_insight(pts2)
-    st.markdown("---")
-
     # PANEL 3 — 20-year projection
-    st.markdown(f"#### {yrs}-year wealth projection")
-    fig,ax=plt.subplots(figsize=(14,5))
-    ax.plot(bp.index,bp["Net Worth"]/1e6,
-        color=NAVY,linewidth=2.5,label="Base Case",zorder=3)
-    for label,r,proj,clr in all_scenarios:
-        ls=("--" if "Income" in label
-            else ":" if "Debt" in label else "-.")
-        ax.plot(proj.index,proj["Net Worth"]/1e6,
-            color=clr,linewidth=2,linestyle=ls,
-            label=label,zorder=3)
-    ax.axhline(0,color="#ddd",linewidth=0.8)
-    ax.fill_between(bp.index,0,bp["Net Worth"]/1e6,
-        where=bp["Net Worth"]>0,alpha=.05,color=NAVY)
-    last=bp.index[-1]
-    for proj,clr in ([(bp,NAVY)]+
-        [(p,c) for _,_,p,c in all_scenarios]):
-        v=proj.iloc[-1]["Net Worth"]
-        ax.annotate(f"  ${v/1e6:.2f}M",
-            xy=(last,v/1e6),fontsize=8,
-            fontweight="bold",color=clr,va="center")
-    ax.set_xlabel("Year",color=NAVY)
-    ax.set_ylabel("Net Worth ($M)",color=NAVY)
-    ax.yaxis.set_major_formatter(mticker.FuncFormatter(
-        lambda x,_:f"${x:.1f}M"))
-    ax.legend(framealpha=.9,fontsize=8,loc="upper left")
-    ax.set_title(f"{yrs}-Year Net Worth Projection",
-        fontweight="bold",color=NAVY,pad=10,fontsize=10)
-    plt.tight_layout(); st.pyplot(fig); plt.close()
-    b20=bp.iloc[-1]["Net Worth"]
-    best20=max(b20,s1p.iloc[-1]["Net Worth"],
-        s2p.iloc[-1]["Net Worth"])
-    best20n=("Base Case" if best20==b20
-        else s1_type if best20==s1p.iloc[-1]["Net Worth"]
-        else s2_type)
-    gap20=best20-min(b20,s1p.iloc[-1]["Net Worth"],
-        s2p.iloc[-1]["Net Worth"])
-    cx=next((int(y) for y,r in bp.iterrows()
-        if r["Net Worth"]>0),None)
-    pts3=[]
-    pts3.append(f"{best20n} projects the strongest year {yrs} outcome at ${best20/1e6:.2f}M.")
-    pts3.append(f"Scenario gap at year {yrs}: ${gap20/1e6:.2f}M — compounding amplifies early surplus differences.")
-    if cx and cx>0:
-        pts3.append(f"Net worth turns positive in year {cx} — growth accelerates as debt clears.")
-    pts3.append("Small strategy differences today create large wealth divergence over 20 years.")
-    render_insight(pts3)
-    render_insight(generate_insight("summary",
-        br,s1r,s2r,bp,s1p,s2p,s1_type,s2_type,
-        yrs,income,expenses,rep,cash,debt,super_bal))
+    with ec3:
+        st.markdown(f"##### {yrs}-year projection")
+        fig,ax=plt.subplots(figsize=(5,4))
+        ax.plot(bp.index,bp["Net Worth"]/1e6,
+            color=NAVY,linewidth=2.5,label="Base Case",zorder=3)
+        for label,r,proj,clr in all_scenarios:
+            ls=("--" if "Income" in label
+                else ":" if "Debt" in label else "-.")
+            ax.plot(proj.index,proj["Net Worth"]/1e6,
+                color=clr,linewidth=2,linestyle=ls,
+                label=label,zorder=3)
+        ax.axhline(0,color="#ddd",linewidth=0.8)
+        ax.fill_between(bp.index,0,bp["Net Worth"]/1e6,
+            where=bp["Net Worth"]>0,alpha=.05,color=NAVY)
+        last=bp.index[-1]
+        for proj,clr in ([(bp,NAVY)]+
+            [(p,c) for _,_,p,c in all_scenarios]):
+            v=proj.iloc[-1]["Net Worth"]
+            ax.annotate(f"  ${v/1e6:.2f}M",
+                xy=(last,v/1e6),fontsize=9,
+                fontweight="bold",color=clr,va="center")
+        ax.set_xlabel("Year",color=NAVY)
+        ax.set_ylabel("Net Worth ($M)",color=NAVY)
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(
+            lambda x,_:f"${x:.1f}M"))
+        ax.legend(framealpha=.9,fontsize=9,loc="upper left")
+        ax.set_title(f"{yrs}-Year Net Worth Projection",
+            fontweight="bold",color=NAVY,pad=10,fontsize=11)
+        plt.tight_layout(); st.pyplot(fig); plt.close()
+    st.markdown("---")
+    # Per-chart insight boxes
+    st.markdown("**Asset mix — observations**")
+    render_insight(pts1)
+
+    st.markdown("**Net position by scenario — observations**")
+    render_insight(pts2)
+
+    st.markdown("**Wealth projection — observations**")
+    b20 = bp.iloc[-1]["Net Worth"]
+    best20 = max(b20, s1p.iloc[-1]["Net Worth"], s2p.iloc[-1]["Net Worth"])
+    best20n = ("Base Case" if best20 == b20
+        else s1_type if best20 == s1p.iloc[-1]["Net Worth"] else s2_type)
+    gap20 = best20 - min(b20, s1p.iloc[-1]["Net Worth"], s2p.iloc[-1]["Net Worth"])
+    cx = next((int(y) for y, r in bp.iterrows() if r["Net Worth"] > 0), None)
+    pts_proj = [f"{best20n} projects the strongest year {yrs} outcome at ${best20/1e6:.2f}M."]
+    pts_proj.append(f"Scenario gap at year {yrs}: ${gap20/1e6:.2f}M — compounding amplifies early surplus differences.")
+    if cx and cx > 0:
+        pts_proj.append(f"Net worth turns positive in year {cx} — growth accelerates as debt clears.")
+    render_insight(pts_proj)
+
+    st.markdown("**Integrated summary — what this means for this client**")
+    sr = br["savings_rate"]
+    em = br["emergency_months"]
+    dta = br["debt_to_assets"] * 100
+    net = br["net_position"]
+    sur = br["surplus"]
+    pts_int = []
+    pts_int.append(f"Current position: {'net deficit' if net < 0 else 'net positive'} of {fmt(abs(net))} with a {sr*100:.1f}% savings rate generating ${sur:,.0f} p.a. reinvestable surplus.")
+    pts_int.append(f"Asset mix is {sp_pct:.0f}% concentrated in super — only accessible from preservation age. Liquid cash is {ca_pct:.0f}% ({em:.1f} months buffer).")
+    pts_int.append(f"Debt is {dta:.0f}% of assets — high leverage expected at this stage but sensitive to rate rises and income shocks.")
+    pts_int.append(f"Best long-term strategy is {best20n} at ${best20/1e6:.2f}M by year {yrs} — a ${gap20/1e6:.2f}M gap vs worst case.")
+    if em < 3:
+        pts_int.append(f"Immediate priority: emergency buffer is only {em:.1f} months — build to 3 months (${expenses/4:,.0f}) before accelerating investment.")
+    elif sr < 0.15:
+        pts_int.append(f"Savings rate of {sr*100:.1f}% limits accumulation speed — review expenses or income strategy.")
+    else:
+        pts_int.append(f"With {sr*100:.1f}% savings rate and {best20n} strategy, wealth trajectory is strong. Focus on maintaining surplus and reviewing super contributions.")
+    render_insight(pts_int)
 
 # ════════════════════════════════════════════════════════════════
 # SHOCK ANALYSIS
@@ -947,24 +1253,53 @@ with t_shock:
     st.caption(f"Assumptions: {gr*100:.1f}% growth · {sg*100:.1f}% SG · ${rep:,} repayment · {yrs} yr projection · today's dollars · Age Pension not modelled")
     st.markdown("### Shock Analysis")
     st.caption("Each bar shows the isolated impact of a single adverse event on year 20 net worth vs the base case. Shocks are independent — each runs against the base case only, not combined. Use sliders to adjust magnitude. The longest bar identifies this client's biggest financial vulnerability.")
+    with st.expander("How each shock is calculated"):
+        st.markdown("""
+| Shock | Formula applied | What it models |
+|---|---|---|
+| **Income reduction** | `income × (1 − pct/100)` | Permanently lower income → less surplus every year → less compounding for full projection |
+| **Expense increase** | `expenses × (1 + pct/100)` | Higher costs reduce reinvestable surplus by same amount annually |
+| **Returns drop** | Growth rate: `7% → X%` | Applied to portfolio and super compounding — small % change creates large end difference via compounding |
+| **Job loss** | `income × (1 − months/12)` | Zero income averaged across year 1 only — not a true month-by-month model |
+| **Rate rise** | `expenses += debt × rate%` | Treated as permanent extra annual cost — not a true mortgage P&I recalculation |
+| **Super paused** | `super_balance − (income × SG × years)` | Removes missed contributions as lump sum from starting balance — loses all future compounding on those amounts |
+| **Debt increase** | `debt × (1 + pct/100)` | Higher starting debt reduces net worth immediately and raises total interest over repayment term |
+
+**Important limitations:** Each shock runs independently against base case only — shocks are not combined. Job loss and rate rise are approximations, not true cash flow models. All shocks apply from year 0.
+        """)
     st.markdown("**Adjust shock magnitudes**")
+    st.caption("Each slider sets the size of a single adverse event. The formula below each slider explains exactly how the model applies it — so you can see what a '20%' or '3 year' figure actually means in practice.")
+
     c1,c2 = st.columns(2)
     with c1:
-        sh_inc = st.slider("Income reduction (%)",   5,50,20,5)
-        st.caption(f"Applied as: income × (1 − {sh_inc/100:.2f}) = ${income*(1-sh_inc/100):,.0f} p.a.  Reduces annual surplus by ${income*sh_inc/100:,.0f} — that shortfall stops compounding for every remaining year.")
-        sh_exp = st.slider("Expense increase (%)",   5,50,20,5)
-        st.caption(f"Applied as: expenses × (1 + {sh_exp/100:.2f}) = ${expenses*(1+sh_exp/100):,.0f} p.a.  Surplus falls by ${expenses*sh_exp/100:,.0f} each year.")
-        sh_ret = st.slider("Investment returns drop — use % p.a.",1,6,3,1)
-        st.caption(f"Applied as: growth rate drops from {gr*100:.1f}% → {max(0,gr*100-sh_ret):.1f}% p.a.  Even 1% less return materially erodes a large portfolio via compounding.")
-        sh_job = st.slider("Job loss (months)",      1,24,6,1)
-        st.caption(f"Applied as: income × (1 − {sh_job}/12) = ${income*(1-sh_job/12):,.0f} annualised.  {sh_job} months of zero income averaged across year 1.")
+        sh_inc = st.slider("Income reduction (%)", 5, 50, 20, 5)
+        st.caption(f"Applied as: income × (1 − {sh_inc/100:.2f}) = ${income*(1-sh_inc/100):,.0f} p.a. "
+                   f"Reduces annual surplus by ${income*sh_inc/100:,.0f} — that shortfall stops compounding for every remaining year.")
+
+        sh_exp = st.slider("Expense increase (%)", 5, 50, 20, 5)
+        st.caption(f"Applied as: expenses × (1 + {sh_exp/100:.2f}) = ${expenses*(1+sh_exp/100):,.0f} p.a. "
+                   f"Surplus falls by ${expenses*sh_exp/100:,.0f} — less reinvested each year for the full projection.")
+
+        sh_ret = st.slider("Investment returns drop — use % p.a.", 1, 6, 3, 1)
+        st.caption(f"Applied as: growth rate drops from {gr*100:.1f}% → {max(0,gr*100-sh_ret):.1f}% p.a. "
+                   f"Even 1% less return materially erodes a large portfolio via compounding over {yrs} years.")
+
+        sh_job = st.slider("Job loss (months)", 1, 24, 6, 1)
+        st.caption(f"Applied as: income × (1 − {sh_job}/12) = ${income*(1-sh_job/12):,.0f} annualised. "
+                   f"Models {sh_job} months of zero income averaged across year 1, removing ${income*sh_job/12:,.0f} from that year's saving.")
+
     with c2:
-        sh_rate= st.slider("Interest rate rise (%)", 1,5,2,1)
-        st.caption(f"Applied as: expenses += debt × {sh_rate/100:.2f} = extra ${debt*sh_rate/100:,.0f} p.a.  Treats the rise as a permanent annual cost.")
-        sh_sup = st.slider("Super paused (years)",   1,10,3,1)
-        st.caption(f"Applied as: super_balance − (income × SG × {sh_sup}) = −${income*sg*sh_sup:,.0f} removed.  Missed contributions lose all future compounding.")
-        sh_dbt = st.slider("Debt increase (%)",      5,30,10,5)
-        st.caption(f"Applied as: debt × (1 + {sh_dbt/100:.2f}) = ${debt*(1+sh_dbt/100):,.0f} total.  Reduces net worth by ${debt*sh_dbt/100:,.0f} immediately.")
+        sh_rate = st.slider("Interest rate rise (%)", 1, 5, 2, 1)
+        st.caption(f"Applied as: expenses += debt × {sh_rate/100:.2f} = extra ${debt*sh_rate/100:,.0f} p.a. "
+                   f"Treats the rate rise as a permanent annual cost increase — reduces surplus and reinvestment capacity every year.")
+
+        sh_sup = st.slider("Super paused (years)", 1, 10, 3, 1)
+        st.caption(f"Applied as: super_balance − (income × SG × {sh_sup}) = −${income*sg*sh_sup:,.0f} removed. "
+                   f"Missed contributions forfeit both the deposit and all compounding on those amounts for the rest of the projection.")
+
+        sh_dbt = st.slider("Debt increase (%)", 5, 30, 10, 5)
+        st.caption(f"Applied as: debt × (1 + {sh_dbt/100:.2f}) = ${debt*(1+sh_dbt/100):,.0f} total. "
+                   f"Higher principal reduces net worth immediately by ${debt*sh_dbt/100:,.0f} and raises total interest paid over the repayment term.")
 
     base_y20 = bp.loc[min(yrs,20),"Net Worth"] if yrs>=20 else bp.iloc[-1]["Net Worth"]
 
@@ -1010,6 +1345,42 @@ with t_shock:
     plt.tight_layout(); st.pyplot(fig); plt.close()
 
     st.markdown("<div style='height:.5rem'></div>", unsafe_allow_html=True)
+
+    # ── Year-by-year shocked net worth paths ─────────────────────
+    st.markdown("**Year-by-year net worth path under each shock vs base case**")
+    st.caption("Each line shows how net worth develops over time if that single shock is applied from year 0. "
+               "The gap between a shock line and the base case widens over time because compound growth amplifies early differences.")
+    shock_scenarios = [
+        (f"Income −{sh_inc}%",      {"income": int(income*(1-sh_inc/100))},        None,           "#D85A30"),
+        (f"Expenses +{sh_exp}%",    {"expenses": int(expenses*(1+sh_exp/100))},     None,           "#993556"),
+        (f"Returns {max(0,gr*100-sh_ret):.0f}%", {},                               sh_ret/100,     "#457B9D"),
+        (f"Job loss {sh_job} mo",   {"income": int(income*(1-sh_job/12))},          None,           "#8B5E3C"),
+        (f"Rate +{sh_rate}%",       {"expenses": expenses+int(debt*sh_rate/100)},   None,           "#2D6A4F"),
+        (f"Super −{sh_sup}y",       {"super_balance": max(0,super_bal-int(income*sg*sh_sup))}, None,"#6B3FA0"),
+        (f"Debt +{sh_dbt}%",        {"debt": int(debt*(1+sh_dbt/100))},             None,           "#2E86AB"),
+    ]
+    fig2, ax2 = plt.subplots(figsize=(14, 6))
+    ax2.plot(bp.index, bp["Net Worth"]/1e6, color=NAVY, linewidth=2.5, label="Base Case", zorder=4)
+    ax2.fill_between(bp.index, 0, bp["Net Worth"]/1e6, where=bp["Net Worth"]>0, alpha=0.05, color=NAVY)
+    for s_label, s_changes, s_alt_gr, s_clr in shock_scenarios:
+        s_proj = project_wealth(create_scenario(base_client, s_changes), yrs, s_alt_gr or gr, sg, rep)
+        ax2.plot(s_proj.index, s_proj["Net Worth"]/1e6, color=s_clr, linewidth=2,
+                 linestyle="--", label=s_label, zorder=3, alpha=0.9)
+        end_v = s_proj.iloc[-1]["Net Worth"]
+        ax2.annotate(f"  ${end_v/1e6:.2f}M", xy=(s_proj.index[-1], end_v/1e6),
+                     fontsize=7.5, color=s_clr, va="center")
+    base_end = bp.iloc[-1]["Net Worth"]
+    ax2.annotate(f"  ${base_end/1e6:.2f}M", xy=(bp.index[-1], base_end/1e6),
+                 fontsize=8.5, fontweight="bold", color=NAVY, va="center")
+    ax2.axhline(0, color="#ccc", linewidth=0.8)
+    ax2.set_xlabel("Year", color=NAVY)
+    ax2.set_ylabel("Net Worth ($M)", color=NAVY)
+    ax2.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x,_: f"${x:.1f}M"))
+    ax2.set_title(f"Net Worth Trajectory Under Each Shock — {client_name}", fontweight="bold",
+                  color=NAVY, pad=10, fontsize=11)
+    ax2.legend(fontsize=8, framealpha=0.9, loc="upper left", ncol=2)
+    plt.tight_layout(); st.pyplot(fig2); plt.close()
+
     th2 = "<th>Surplus impact</th><th>Net position impact</th><th>Year 20 impact</th>"
     html2 = f'<table class="word-table"><thead><tr><th>Shock</th>{th2}</tr></thead><tbody>'
     for label,nw in shocks:
@@ -1031,9 +1402,79 @@ with t_shock:
         ds   = sr2["surplus"] - br["surplus"]
         dn   = sr2["net_position"] - br["net_position"]
         dy20 = nw - base_y20
-        html2 += f'<tr><td>{label}</td><td class="{cc(ds)}">{fmt(ds)}</td><td class="{cc(dn)}">{fmt(dn)}</td><td class="{cc(dy20)}">{fmt(dy20)}</td></tr>'
+        def cz(v): return "cell-pos" if v>0 else "cell-neg" if v<0 else "cell-zero"
+        html2 += f'<tr><td>{label}</td><td class="{cz(ds)}">{fmt(ds)}</td><td class="{cz(dn)}">{fmt(dn)}</td><td class="{cz(dy20)}">{fmt(dy20)}</td></tr>'
     html2 += '</tbody></table>'
     st.markdown(html2, unsafe_allow_html=True)
+
+    st.markdown("---")
+    st.markdown("### Base vs Shocked — side by side comparison")
+    st.caption("Select a shock to compare base case inputs and outputs directly against the shocked scenario. Red = worse than base, green = better.")
+
+    shock_options = [s[0] for s in shocks]
+    selected_shock = st.selectbox("Select shock to compare", shock_options, key="shock_compare")
+
+    shock_map = {
+        f"Income −{sh_inc}%":         {"income": int(income*(1-sh_inc/100))},
+        f"Expenses +{sh_exp}%":        {"expenses": int(expenses*(1+sh_exp/100))},
+        f"Returns drop to {sh_ret}%":  {},
+        f"Job loss {sh_job} mo":       {"income": int(income*(1-sh_job/12))},
+        f"Rate rise +{sh_rate}%":      {"expenses": expenses+int(debt*sh_rate/100)},
+        f"Super paused {sh_sup}y":     {"super_balance": max(0,super_bal-int(income*sg*sh_sup))},
+        f"Debt +{sh_dbt}%":            {"debt": int(debt*(1+sh_dbt/100))},
+    }
+    alt_gr_map = {f"Returns drop to {sh_ret}%": sh_ret/100}
+
+    sc_sel = create_scenario(base_client, shock_map.get(selected_shock, {}))
+    sc_sel_r = calculate_financials(sc_sel)
+    sc_sel_y20 = project_wealth(sc_sel, yrs, alt_gr_map.get(selected_shock, gr), sg, rep).iloc[-1]["Net Worth"]
+
+    comp_rows = [
+        ("Annual income",         fmt(income),                        fmt(sc_sel.get("income", income))),
+        ("Annual expenses",       fmt(expenses),                      fmt(sc_sel.get("expenses", expenses))),
+        ("Debt",                  fmt(debt),                          fmt(sc_sel.get("debt", debt))),
+        ("Super balance",         fmt(super_bal),                     fmt(sc_sel.get("super_balance", super_bal))),
+        ("Annual surplus",        fmt(br["surplus"]),                  fmt(sc_sel_r["surplus"])),
+        ("Savings rate",          f"{br['savings_rate']*100:.1f}%",   f"{sc_sel_r['savings_rate']*100:.1f}%"),
+        ("Emergency buffer",      f"{br['emergency_months']:.1f} mo", f"{sc_sel_r['emergency_months']:.1f} mo"),
+        ("Debt to assets",        f"{br['debt_to_assets']*100:.0f}%", f"{sc_sel_r['debt_to_assets']*100:.0f}%"),
+        (f"Year {yrs} net worth", fmt(base_y20),                      fmt(sc_sel_y20)),
+        ("Year 20 difference",    "—",                                fmt(sc_sel_y20 - base_y20)),
+    ]
+
+    def parse_fmt(s):
+        try: return float(s.replace("$","").replace(",","").replace("(","").replace(")","").replace("%","").replace(" mo","")) * (-1 if "(" in s else 1)
+        except: return None
+
+    comp_html = '<table class="word-table"><thead><tr><th>Metric</th><th>Base case</th><th>Shocked case</th><th>Change</th></tr></thead><tbody>'
+    for label, bv, sv in comp_rows:
+        rb = parse_fmt(bv); rs = parse_fmt(sv)
+        if rb is not None and rs is not None and bv != "—":
+            diff = rs - rb
+            diff_cls = "cell-neg" if diff < 0 else "cell-pos" if diff > 0 else ""
+            diff_str = fmt(diff) if abs(diff) > 0 else "—"
+            sv_cls = "cell-neg" if rs < rb else "cell-pos" if rs > rb else ""
+        else:
+            diff_cls = "cell-neg"; diff_str = sv; sv_cls = "cell-neg"
+        comp_html += f'<tr><td>{label}</td><td>{bv}</td><td class="{sv_cls}">{sv}</td><td class="{diff_cls}">{diff_str}</td></tr>'
+    comp_html += '</tbody></table>'
+    st.markdown(comp_html, unsafe_allow_html=True)
+
+    fig_c, ax_c = plt.subplots(figsize=(14, 6))
+    bp_sel = project_wealth(sc_sel, yrs, alt_gr_map.get(selected_shock, gr), sg, rep)
+    ax_c.plot(bp.index, bp["Net Worth"]/1e6, color=NAVY, linewidth=3, label="Base Case", zorder=3)
+    ax_c.plot(bp_sel.index, bp_sel["Net Worth"]/1e6, color="#C00000", linewidth=2.5, linestyle="--", label=f"Shocked: {selected_shock}", zorder=3)
+    ax_c.fill_between(bp.index, bp["Net Worth"]/1e6, bp_sel["Net Worth"]/1e6, alpha=0.1, color="#C00000", label="Gap")
+    ax_c.axhline(0, color="#ccc", linewidth=0.8)
+    ax_c.set_xlabel("Year", color=NAVY)
+    ax_c.set_ylabel("Net Worth ($M)", color=NAVY)
+    ax_c.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x,_: f"${x:.1f}M"))
+    ax_c.legend(fontsize=9, framealpha=0.9)
+    ax_c.set_title(f"Base Case vs {selected_shock} — Net Worth Trajectory", fontweight="bold", color=NAVY, pad=10, fontsize=11)
+    ax_c.annotate(f"  ${bp.iloc[-1]['Net Worth']/1e6:.2f}M", xy=(bp.index[-1], bp.iloc[-1]["Net Worth"]/1e6), fontsize=9, fontweight="bold", color=NAVY, va="center")
+    ax_c.annotate(f"  ${bp_sel.iloc[-1]['Net Worth']/1e6:.2f}M", xy=(bp_sel.index[-1], bp_sel.iloc[-1]["Net Worth"]/1e6), fontsize=9, fontweight="bold", color="#C00000", va="center")
+    plt.tight_layout(); st.pyplot(fig_c); plt.close()
+
     shock_vals = dict(shocks)
     worst_label = min(shock_vals, key=shock_vals.get)
     worst_delta = shock_vals[worst_label]
@@ -1056,10 +1497,9 @@ with t_shock:
 with t_proj:
     st.caption(f"Assumptions: {gr*100:.1f}% growth · {sg*100:.1f}% SG · ${rep:,} repayment · {yrs} yr projection · today's dollars · Age Pension not modelled")
     fig,ax=plt.subplots(figsize=(11,5))
-    ax.plot(bp.index,bp["Net Worth"]/1e6,color=NAVY,linewidth=2.5,label="Base Case",zorder=3)
+    ax.plot(bp.index,bp["Net Worth"]/1e6,color=NAVY,linewidth=3,label="Base Case",zorder=3)
     for label,r,proj,clr in all_scenarios:
-        ls = "--" if "Income" in label else ":" if "Debt" in label else "-."
-        ax.plot(proj.index,proj["Net Worth"]/1e6,color=clr,linewidth=2,linestyle=ls,label=label,zorder=3)
+        ax.plot(proj.index,proj["Net Worth"]/1e6,color=clr,linewidth=2.5,linestyle="--",label=label,zorder=3)
     ax.axhline(0,color="#ddd",linewidth=1)
     ax.fill_between(bp.index,0,bp["Net Worth"]/1e6,where=bp["Net Worth"]>0,alpha=.05,color=NAVY)
     last_yr = bp.index[-1]
@@ -1095,15 +1535,17 @@ with t_life:
     st.markdown("### Life Stage Analysis")
     st.caption("Australian financial life stage modelling — accumulation phase active")
 
-    st.markdown("""
+    st.markdown(f"""
     <div style='background:#E6F1FB;border-radius:10px;padding:1rem 1.25rem;margin-bottom:12px;
     border:1px solid #B5D4F4'>
     <div style='font-size:11px;text-transform:uppercase;letter-spacing:.08em;
     color:#185FA5;margin-bottom:4px'>Active — Accumulation phase</div>
     <div style='font-size:14px;font-weight:500;color:#1B2E4B'>Building wealth while working</div>
-    <div style='font-size:12px;color:#444;margin-top:6px'>
-    Super grows at 7% + SG contributions. Portfolio grows from reinvested surplus.
-    Debt reduces by annual repayment.
+    <div style='font-size:13px;color:#444;margin-top:8px;line-height:1.8'>
+    <b>Active now (age 18–49):</b> Accumulation — super grows at {gr*100:.1f}% + SG, portfolio grows from reinvested surplus, debt reduces by ${rep:,} p.a.<br>
+    <b>Unlocks at age 50:</b> Pre-Retirement readiness check — projected super vs target, gap, years to close shortfall.<br>
+    <b>Unlocks at age 65:</b> Retirement Drawdown — sustainable income, asset depletion year, shortfall vs desired income.<br>
+    <b>Not yet built:</b> Pension phase — Transfer Balance Cap, 0% earnings tax, Age Pension means testing.
     </div></div>""", unsafe_allow_html=True)
 
     if older_age >= 50:
@@ -1142,12 +1584,13 @@ with t_life:
     else:
         st.markdown("""
         <div style='background:#F8F7F4;border-radius:10px;padding:1rem 1.25rem;
-        margin-bottom:12px;border:0.5px solid #E5E7EB;opacity:0.7'>
+        margin-bottom:12px;border:1px solid #D1D5DB;opacity:1'>
         <div style='font-size:11px;text-transform:uppercase;letter-spacing:.08em;
-        color:#aaa;margin-bottom:4px'>Coming soon — Pre-Retirement phase</div>
-        <div style='font-size:13px;color:#888'>
-        Available when client age reaches 50. Models retirement readiness —
-        target super, readiness gap, and years to close shortfall.
+        color:#888;margin-bottom:4px'>Available from age 50 — Pre-Retirement phase</div>
+        <div style='font-size:15px;color:#555'>
+        Switch to New Client in the sidebar and set age to 50+ to activate this section.
+        Shows: projected super at retirement, target super needed (desired income ÷ 4%),
+        readiness gap, and years of extra contributions needed to close any shortfall.
         </div></div>""", unsafe_allow_html=True)
 
     if older_age>=65:
@@ -1206,22 +1649,26 @@ with t_life:
     else:
         st.markdown("""
     <div style='background:#F8F7F4;border-radius:10px;padding:1rem 1.25rem;
-    margin-bottom:12px;border:0.5px solid #E5E7EB;opacity:0.7'>
+    margin-bottom:12px;border:1px solid #D1D5DB;opacity:1'>
     <div style='font-size:11px;text-transform:uppercase;letter-spacing:.08em;
-    color:#aaa;margin-bottom:4px'>Coming soon — Retirement Drawdown phase</div>
-    <div style='font-size:13px;color:#888'>
-    Models sustainable income from accumulated assets.
-    4% drawdown rule · asset depletion age · sustainable income level.
-    Age Pension not modelled.
+    color:#888;margin-bottom:4px'>Available from age 65 — Retirement Drawdown phase</div>
+    <div style='font-size:15px;color:#555'>
+    Switch to New Client and set age to 65+ to activate this section.
+    Shows: sustainable annual income from your assets using the 4% rule,
+    projected asset depletion year, and shortfall vs desired income.
+    Age Pension is not modelled — assess separately via Services Australia.
     </div></div>""", unsafe_allow_html=True)
 
     st.markdown("""
     <div style='background:#F8F7F4;border-radius:10px;padding:1rem 1.25rem;
-    border:0.5px solid #E5E7EB;opacity:0.7'>
+    border:1px solid #D1D5DB;opacity:1'>
     <div style='font-size:11px;text-transform:uppercase;letter-spacing:.08em;
-    color:#aaa;margin-bottom:4px'>Planned — Pension Phase</div>
-    <div style='font-size:13px;color:#888'>
-    Transfer Balance Cap management · tax-free pension phase · Age Pension interaction.
+    color:#888;margin-bottom:4px'>Not yet modelled — Pension Phase</div>
+    <div style='font-size:15px;color:#555'>
+    Not built. Would require: Transfer Balance Cap tracking ($1.9M limit),
+    switching investment earnings tax from 15% to 0% in pension phase,
+    minimum drawdown rates by age, and Age Pension means testing.
+    Raise this with your developer when ready to build.
     </div></div>""", unsafe_allow_html=True)
 
 # ════════════════════════════════════════════════════════════════
@@ -1271,6 +1718,33 @@ with t_leg:
 | Transfer Balance Cap | $1.9 million (2024–25, indexed annually) | **NOT MODELLED** |
 | Pension phase earnings tax | 0% (vs 15% in accumulation) | **NOT MODELLED** |
 | Account-based pension | Minimum drawdown rates apply from age 60 | **NOT MODELLED** |
+
+**Minimum annual drawdown rates by age (legislated):**
+
+| Age | Minimum drawdown % |
+|---|---|
+| Under 65 | 4% |
+| 65–74 | 5% |
+| 75–79 | 6% |
+| 80–84 | 7% |
+| 85–89 | 9% |
+| 90–94 | 11% |
+| 95+ | 14% |
+
+**Transfer Balance Cap — what triggers it:**
+- When super moves from accumulation to pension phase, the total transferred cannot exceed $1.9M
+- Earnings in pension phase are tax-free (0%) vs 15% in accumulation
+- Excess above cap must remain in accumulation or be withdrawn
+- Cap is indexed annually in $100k increments
+
+**What changes phase by phase:**
+
+| Phase | Earnings tax | Drawdown required | Contributions allowed |
+|---|---|---|---|
+| Accumulation | 15% | None | Yes — up to concessional cap |
+| Transition to Retirement | 15% | Min 4%, max 10% | Yes |
+| Pension (retirement) | 0% | Min rates above apply | No further concessional |
+| Post-Transfer Balance Cap excess | 15% | None | No |
         """)
 
     with st.expander("Age Pension — NOT MODELLED"):
@@ -1336,12 +1810,246 @@ with t_leg:
         """)
 
 # ════════════════════════════════════════════════════════════════
+# MODEL & LIMITATIONS
+# ════════════════════════════════════════════════════════════════
+with t_model:
+    st.markdown("### Understanding This Model & Its Limitations")
+    st.caption("This tab explains exactly how the model works, what it does well, where it approximates, and what it does not model at all. Read before using outputs in client conversations.")
+
+    st.info(f"Model snapshot: {gr*100:.1f}% growth · {sg*100:.1f}% SG · ${rep:,} repayment · {yrs} yr projection · today's dollars · v{APP_VERSION} {APP_BUILD_DATE}")
+
+    # ── WHAT THIS MODEL IS ───────────────────────────────────────
+    with st.expander("What this model is — and what it is not", expanded=True):
+        st.markdown("""
+This is an **accumulation-phase illustration tool** for Australian financial planning conversations.
+
+It is designed to show clients how strategic decisions compound over time — not to produce guaranteed projections or replace a Statement of Advice.
+
+**It is appropriate for:**
+- Illustrating the long-run impact of income, expense, and debt strategies
+- Comparing scenarios side by side in a planning conversation
+- Identifying which financial vulnerabilities matter most (shock analysis)
+- Supporting a pre-retirement readiness conversation
+
+**It is not appropriate for:**
+- Producing legally compliant projections for a Statement of Advice
+- Tax advice or superannuation fund-specific modelling
+- Replacing actuary or specialist retirement income modelling
+- Clients with complex structures (SMSF, trusts, multiple properties, business assets)
+        """)
+
+    # ── HOW THE NUMBERS WORK ─────────────────────────────────────
+    with st.expander("How the numbers work — formulas and assumptions"):
+        st.markdown(f"""
+Every projection runs the same annual loop from year 0 to year {yrs}:
+
+| Component | Formula | Current value |
+|---|---|---|
+| Super (year end) | `prior × (1 + gr) + income × sg` | gr={gr*100:.1f}%, sg={sg*100:.1f}% |
+| Portfolio (year end) | `prior × (1 + gr) + reinvested surplus` | Surplus = ${max(0,income-expenses-rep):,.0f} p.a. |
+| Reinvested surplus | `income − expenses − debt repayment` | ${income:,} − ${expenses:,} − ${rep:,} |
+| Debt (year end) | `max(0, prior − repayment)` | ${rep:,} p.a. fixed reduction |
+| Net worth | `super + portfolio + cash − debt` | Snapshot each year end |
+
+**Key behaviours:**
+- When debt reaches zero, the repayment amount adds to reinvested surplus — this is why projection lines steepen in later years
+- Growth rate applies identically to super and portfolio — no asset allocation differentiation
+- Cash balance is held flat — not invested or grown
+- All figures compound annually, not monthly
+        """)
+
+    # ── WHAT IS APPROXIMATED ────────────────────────────────────
+    with st.expander("What is approximated — and how"):
+        st.markdown(f"""
+| Item | How modelled | What this misses | Impact |
+|---|---|---|---|
+| **Job loss** | Income × (1 − months/12) averaged across year 1 | Not month-by-month — misses cash flow crunch, emergency draw-down timing | Low–medium |
+| **Rate rise** | Added to expenses permanently as `debt × rate%` | Not a true P&I recalculation — overstates long-run cost as debt reduces | Medium |
+| **Super paused** | Lump sum removed from starting balance | Timing of missed contributions not modelled year by year | Low |
+| **Debt repayment** | Fixed ${rep:,} annual principal reduction | Not amortising — interest component not separated from principal | Medium |
+| **Compounding** | Annual only | Funds compound monthly or daily — model slightly understates growth | Low |
+| **Investment returns** | Single flat {gr*100:.1f}% rate forever | No sequence of returns risk — bad years early hurt far more than modelled | High |
+| **Income** | Flat — no growth modelled | Real incomes typically grow with CPI or career progression | Medium |
+| **Expenses** | Flat — no inflation | Real costs rise ~2–3% p.a. — model understates long-run expense pressure | Medium |
+        """)
+
+    # ── WHAT IS NOT MODELLED ─────────────────────────────────────
+    with st.expander("What is not modelled — material omissions"):
+        st.error("These omissions are significant. Outputs should be presented as indicative only and caveated accordingly in all client conversations.")
+        st.markdown(f"""
+| Omission | Why it matters | Workaround |
+|---|---|---|
+| **Contributions tax (15%)** | Super projections overstated by ~15% for all clients | Mentally discount super figures by ~15% |
+| **Division 293 tax** | High-income clients (>$250k) pay 30% on contributions — not 15% | Flag separately for high-income clients |
+| **Fund management fees** | Assumed zero — real fees 0.5–1.5% p.a. reduce returns | Reduce growth rate input by estimated fee |
+| **Inflation** | All figures in today's dollars — nominal future values higher | Use as relative comparison only, not absolute targets |
+| **Age Pension** | Not modelled — significantly affects retirement sustainability | Assess separately via Services Australia calculator |
+| **Transfer Balance Cap** | Check only — no tax consequence modelling | Flag for clients approaching $1.9M |
+| **Pension phase 0% tax** | Tax saving from moving to pension phase not quantified | Estimate manually: pension assets × {gr*100:.1f}% × 15% = annual saving |
+| **Salary sacrifice** | Not modelled as a strategy | Can be approximated by increasing super balance manually |
+| **Catch-up contributions** | Not modelled | Relevant for clients with balance below $500k and unused cap space |
+| **Insurance** | Not modelled | Life, TPD, income protection not included |
+| **Estate planning** | Not modelled | Death benefit nominations, tax on super to non-dependants not included |
+| **SMSF** | Not modelled | Use only for MySuper/industry/retail fund clients |
+| **Multiple properties** | Not modelled | Investment property cash flow, depreciation, CGT not included |
+        """)
+
+    # ── DYNAMIC ACCURACY INDICATORS ──────────────────────────────
+    with st.expander("Live accuracy indicators for this client", expanded=True):
+        st.markdown("These flags are calculated from the current client inputs and identify where this model's approximations are most likely to affect accuracy.")
+
+        acc_flags = []
+        if income > 250000:
+            acc_flags.append(("High", "Division 293 applies — super contributions taxed at 30%, not 15%. Super projections materially overstated.", "🔴"))
+        else:
+            acc_flags.append(("Medium", f"Contributions tax (15%) not deducted — super projection overstated by approximately {fmt(int(super_bal*0.15))} on current balance.", "🟡"))
+
+        if gr > 0.08:
+            acc_flags.append(("Medium", f"Growth rate of {gr*100:.1f}% is above long-run Australian balanced fund average (~7%). Projections may be optimistic.", "🟡"))
+        else:
+            acc_flags.append(("Low", f"Growth rate of {gr*100:.1f}% is within typical long-run range for a balanced fund.", "🟢"))
+
+        if debt > 0:
+            acc_flags.append(("Medium", f"Debt repayment modelled as flat ${rep:,} p.a. — not a true P&I amortising schedule. Year-by-year interest not separated.", "🟡"))
+
+        if older_age >= 55:
+            acc_flags.append(("High", "Client approaching retirement — Age Pension not modelled. This significantly affects retirement sustainability assessment.", "🔴"))
+
+        if income > 0:
+            acc_flags.append(("Medium", "Income held flat for full projection — no career progression or CPI growth modelled. Surplus likely understated in later years.", "🟡"))
+
+        acc_flags.append(("Medium", "Sequence of returns risk not modelled — a bad decade early has far greater impact than shown. Treat year 20 figure as best-case trajectory.", "🟡"))
+
+        for severity, msg, icon in acc_flags:
+            colour = "#FCE4D6" if icon=="🔴" else "#FFF3CD" if icon=="🟡" else "#E2F0D9"
+            border = "#C00000" if icon=="🔴" else "#E8A838" if icon=="🟡" else "#006100"
+            st.markdown(f"<div style='background:{colour};border-left:4px solid {border};padding:10px 14px;border-radius:0 8px 8px 0;font-size:14px;margin-bottom:8px;color:#1B2E4B'>{icon} <strong>{severity} impact:</strong> {msg}</div>", unsafe_allow_html=True)
+
+    # ── INDUSTRY BENCHMARKS ──────────────────────────────────────
+    with st.expander("Industry benchmarks used in this model"):
+        st.markdown(f"""
+| Benchmark | Value used | Source | Current client |
+|---|---|---|---|
+| Minimum savings rate | 10% of gross income | General planning guidance | {br['savings_rate']*100:.1f}% {"✓" if br['savings_rate']>=0.1 else "✗"} |
+| Emergency buffer minimum | 3 months expenses | General planning guidance | {br['emergency_months']:.1f} months {"✓" if br['emergency_months']>=3 else "✗"} |
+| High leverage threshold | Debt > 70% of assets | General planning guidance | {br['debt_to_assets']*100:.0f}% {"✓" if br['debt_to_assets']<=0.7 else "✗"} |
+| Under-funded super | Balance < 1× annual income | General planning guidance | {"✓" if super_bal>=income else "✗"} |
+| Safe withdrawal rate | 4% p.a. | Bengen (1994), widely adopted | Used in pre-retirement and drawdown |
+| SG rate | 11.5% (2024–25) | Superannuation Guarantee (Administration) Act 1992 | {sg*100:.1f}% in model |
+| Growth rate — conservative | 5% p.a. | General planning guidance | — |
+| Growth rate — balanced | 7% p.a. | General planning guidance | {gr*100:.1f}% in model |
+| Growth rate — growth | 8–9% p.a. | General planning guidance | — |
+| Transfer Balance Cap | $1.9M | ATO 2024–25 | — |
+| Concessional contributions cap | $30,000 p.a. | ATO 2024–25 | Not checked in model |
+
+*All benchmarks are planning guidelines only — not guarantees or regulatory requirements unless stated.*
+        """)
+
+    # ── HOW TO PRESENT TO CLIENTS ────────────────────────────────
+    with st.expander("How to present these outputs to clients"):
+        st.markdown("""
+**Language to use:**
+
+- *"This shows the direction and order of magnitude — not a guaranteed outcome."*
+- *"The gap between these two strategies at year 20 is what we're trying to capture — the exact dollar amount will differ but the relative difference is meaningful."*
+- *"This assumes your returns are consistent year to year — in reality they won't be, which is why we hold a buffer."*
+- *"The shock analysis shows which risks matter most for your situation specifically — not in general."*
+
+**Language to avoid:**
+
+- ❌ *"You will have $X in 20 years"* — replace with *"the model projects approximately $X under these assumptions"*
+- ❌ *"This is what your super will be"* — contributions tax not deducted, actual will be lower
+- ❌ *"You're on track for retirement"* — Age Pension and tax not modelled
+- ❌ *"This is financial advice"* — this tool produces general information only
+
+**Compliance note:**
+This tool does not produce a Statement of Advice. Any recommendation to a client must be made through a licensed financial adviser and documented in a compliant SOA. Always read the disclaimer at the bottom of the Report tab before sharing outputs.
+        """)
+
+# ════════════════════════════════════════════════════════════════
 # REPORT
 # ════════════════════════════════════════════════════════════════
 with t_report:
     practice_name = st.text_input(
         "Practice name (for report header)",
         value="[Practice Name]")
+    st.markdown("### Pre-Report Checklist")
+    st.caption("Review every item below before downloading or sharing this report with a client.")
+
+    checklist_items = [
+        ("Growth rate", f"{gr*100:.1f}% p.a.", gr >= 0.05 and gr <= 0.09, "Within typical range (5–9%)" if gr >= 0.05 and gr <= 0.09 else f"⚠ {gr*100:.1f}% is {'above' if gr > 0.09 else 'below'} typical range — consider adjusting or noting in report"),
+        ("SG rate", f"{sg*100:.1f}%", sg >= 0.115, "Current for 2024–25" if sg >= 0.115 else "⚠ Below current legislated rate of 11.5% — update in Model Parameters"),
+        ("Projection years", f"{yrs} years", yrs >= 10, "Adequate horizon" if yrs >= 10 else "⚠ Short projection — consider extending for long-term planning"),
+        ("Emergency buffer", f"{br['emergency_months']:.1f} months", br['emergency_months'] >= 3, "Adequate" if br['emergency_months'] >= 3 else "⚠ Below 3-month minimum — flag with client"),
+        ("Savings rate", f"{br['savings_rate']*100:.1f}%", br['savings_rate'] >= 0.1, "Above 10% minimum" if br['savings_rate'] >= 0.1 else "⚠ Below 10% benchmark — wealth accumulation constrained"),
+        ("Debt to assets", f"{br['debt_to_assets']*100:.0f}%", br['debt_to_assets'] <= 0.7, "Within benchmark" if br['debt_to_assets'] <= 0.7 else "⚠ Above 70% threshold — note leverage risk"),
+        ("Super vs income", f"${super_bal:,} vs ${income:,}", super_bal >= income, "Super above 1× income" if super_bal >= income else "⚠ Super below 1× annual income — review contribution strategy"),
+        ("Contributions tax", "Not deducted", False, "⚠ Always note: super projections are gross — actual ~15% lower after contributions tax"),
+        ("Age Pension", "Not modelled", False, "⚠ Always note: Age Pension not included — assess via Services Australia for clients 55+"),
+        ("Inflation", "Not modelled", False, "⚠ All figures in today's dollars — present as relative comparison, not absolute targets"),
+        ("Sequence of returns", "Not modelled", False, "⚠ Flat return assumption overstates certainty — note volatility risk in conversation"),
+        ("Division 293", f"Income ${income:,}", income <= 250000, "Not applicable" if income <= 250000 else "⚠ Income above $250k — Division 293 applies, super taxed at 30% not 15%"),
+        ("Client age", f"Age {older_age}", True, f"{'Pre-retirement readiness check recommended' if older_age >= 50 else 'Accumulation phase'} {'— drawdown modelling available' if older_age >= 65 else ''}"),
+        ("Practice name", practice_name, practice_name != "[Practice Name]", "✓ Set" if practice_name != "[Practice Name]" else "⚠ Practice name not set — update above before downloading"),
+    ]
+
+    all_pass = all(ok for _,_,ok,_ in checklist_items if _ != "")
+    if all_pass:
+        st.success("All checks passed — report is ready to download.")
+    else:
+        st.warning("Some items require attention before sharing this report with a client. Review red items below.")
+
+    check_html = '<table class="word-table"><thead><tr><th>Check</th><th>Current value</th><th>Status</th><th>Note for consideration</th></tr></thead><tbody>'
+    for label, val, ok, note in checklist_items:
+        status = "<span style='color:#006100;font-weight:500'>✓ Pass</span>" if ok else "<span style='color:#C00000;font-weight:500'>⚠ Review</span>"
+        row_bg = "" if ok else "background:#FFF9F9"
+        check_html += f'<tr style="{row_bg}"><td>{label}</td><td>{val}</td><td>{status}</td><td style="font-size:12px;color:#555">{note}</td></tr>'
+    check_html += '</tbody></table>'
+    st.markdown(check_html, unsafe_allow_html=True)
+    st.markdown("---")
+
+    with st.expander("Notes for consideration in analysis — read before client conversation"):
+        st.markdown(f"""
+**1. Super projections are gross figures**
+Contributions tax of 15% (or 30% for Division 293 clients above $250k) is not deducted.
+The super balance at year {yrs} should be mentally discounted by approximately 15% when discussing with clients.
+Current projected super balance is overstated by this amount.
+
+**2. All figures are in today's dollars**
+Inflation is not modelled. A projected net worth of $3M in year {yrs} is $3M in today's purchasing power terms — the nominal figure will be higher but buys the same amount.
+Present figures as relative comparisons between scenarios, not as absolute wealth targets.
+
+**3. Returns are assumed constant**
+The model uses a flat {gr*100:.1f}% p.a. return every year.
+In reality, a bad sequence of returns early in retirement can deplete assets far faster than shown.
+The year {yrs} figure represents a best-case smooth trajectory.
+
+**4. Debt repayment is simplified**
+The model reduces debt by ${rep:,} p.a. as a fixed principal reduction — not a true P&I amortising schedule.
+Actual mortgage repayments include an interest component that reduces over time.
+This means the model slightly overstates how quickly the client's net worth improves.
+
+**5. Age Pension not included**
+For clients aged 55+, Age Pension eligibility can significantly improve retirement sustainability.
+The assets test threshold for homeowners is approximately $314k (single) or $470k (couple) for full pension.
+Assess separately via the Services Australia website or a specialist.
+
+**6. Shock analysis shocks are independent**
+Each shock runs against the base case only — they are not combined.
+In real adverse scenarios (e.g. job loss during a rate rise), the combined impact is worse than any single bar shows.
+Use the shock analysis to identify the most material individual vulnerability, then discuss combined scenarios qualitatively.
+
+**7. Income is held flat**
+No income growth is modelled. For younger clients, actual income growth over {yrs} years will likely improve outcomes.
+The model is conservative in this respect — actual surplus and savings rate will tend to improve over time.
+
+**8. This is not a Statement of Advice**
+These outputs are general information only.
+Any recommendation must be made through a licensed financial adviser and documented in a compliant SOA.
+The disclaimer text is available below and must accompany any client-facing output.
+        """)
+
+    st.markdown("---")
     st.markdown("**Report preview**")
     st.markdown(f"Client: **{client_name}** · Generated: **{date.today().strftime('%d %B %Y')}** · Model: Accumulation phase · Growth rate: {gr*100:.1f}% · SG: {sg*100:.1f}% · Repayment: ${rep:,} p.a.")
 
@@ -1379,21 +2087,68 @@ with t_report:
         "use in client conversations."
     )
 
+    soa_intro = generate_insight("soa_intro", br,s1r,s2r,bp,s1p,s2p,s1_type,s2_type,yrs,income,expenses,rep,cash,debt,super_bal)
+    soa_conc  = generate_insight("soa_conclusion", br,s1r,s2r,bp,s1p,s2p,s1_type,s2_type,yrs,income,expenses,rep,cash,debt,super_bal)
+    soa_obs   = generate_insight("summary", br,s1r,s2r,bp,s1p,s2p,s1_type,s2_type,yrs,income,expenses,rep,cash,debt,super_bal)
+
+    risk_html = "".join(f"<span style='background:#FCE4D6;color:#C00000;padding:3px 10px;border-radius:12px;font-size:11px;margin-right:6px'>{f}</span>" for f in bo["risk_flags"]) if bo["risk_flags"] else "<span style='background:#E2F0D9;color:#006100;padding:3px 10px;border-radius:12px;font-size:11px'>No critical risk flags</span>"
+
     report_html = f"""<html><head><meta charset='utf-8'>
-<style>body{{font-family:sans-serif;color:#1B2E4B;padding:40px;}}
-h1{{font-size:22px;}}h2{{font-size:15px;border-bottom:2px solid #1B2E4B;padding-bottom:5px;margin-top:28px;}}
-table{{width:100%;border-collapse:collapse;margin-bottom:20px;font-size:12px;}}
-th{{background:#F2F2F2;border-top:2px solid #1B2E4B;border-bottom:2px solid #1B2E4B;padding:7px 11px;text-align:right;}}
-th:first-child{{text-align:left;}}td{{border-bottom:.5px solid #E5E7EB;padding:7px 11px;text-align:right;}}
-td:first-child{{text-align:left;}}.pos{{background:#E2F0D9;color:#006100;font-weight:500;}}
-.neg{{background:#FCE4D6;color:#C00000;font-weight:500;}}.disc{{font-size:11px;color:#888;line-height:1.7;margin-top:28px;border-top:1px solid #eee;padding-top:14px;}}
+<style>
+body{{font-family:'Helvetica Neue',Arial,sans-serif;color:#1B2E4B;padding:48px;max-width:900px;margin:0 auto;line-height:1.7;}}
+.header{{background:#1B2E4B;color:white;padding:28px 32px;border-radius:10px;margin-bottom:32px;}}
+.header h1{{font-size:24px;margin:0 0 6px;font-weight:400;letter-spacing:.02em;}}
+.header p{{margin:0;opacity:.7;font-size:13px;}}
+h2{{font-size:15px;border-bottom:2px solid #1B2E4B;padding-bottom:6px;margin-top:36px;text-transform:uppercase;letter-spacing:.06em;}}
+h3{{font-size:13px;color:#555;margin-top:24px;}}
+p{{font-size:13px;color:#333;}}
+.metrics{{display:flex;gap:16px;margin:20px 0;flex-wrap:wrap;}}
+.metric{{background:#F8F7F4;border-radius:8px;padding:12px 16px;flex:1;min-width:120px;border:.5px solid #E5E7EB;}}
+.metric .label{{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#888;margin-bottom:4px;}}
+.metric .value{{font-size:18px;font-weight:600;color:#1B2E4B;}}
+.insight{{background:#F8F7F4;border-left:4px solid #1B2E4B;padding:14px 18px;border-radius:0 8px 8px 0;margin:16px 0;font-size:13px;}}
+.insight ul{{margin:8px 0 0;padding-left:1.2rem;}}
+.insight li{{margin-bottom:6px;}}
+table{{width:100%;border-collapse:collapse;margin:16px 0;font-size:12px;}}
+th{{background:#F2F2F2;border-top:2px solid #1B2E4B;border-bottom:2px solid #1B2E4B;padding:8px 12px;text-align:right;text-transform:uppercase;font-size:10px;letter-spacing:.04em;}}
+th:first-child{{text-align:left;}}
+td{{border-bottom:.5px solid #E5E7EB;padding:8px 12px;text-align:right;}}
+td:first-child{{text-align:left;}}
+.pos{{background:#E2F0D9;color:#006100;font-weight:500;}}
+.neg{{background:#FCE4D6;color:#C00000;font-weight:500;}}
+.disc{{font-size:11px;color:#888;line-height:1.7;margin-top:32px;border-top:1px solid #eee;padding-top:16px;}}
+.flag{{display:inline-block;padding:3px 10px;border-radius:12px;font-size:11px;margin-right:6px;}}
 </style></head><body>
-<h1>Financial Scenario Analysis</h1>
-<p><strong>{client_name}</strong> · {date.today().strftime('%d %B %Y')}</p>
-<p style='font-size:12px;color:#888'>Growth rate: {gr*100:.1f}% · SG rate: {sg*100:.1f}% · Annual repayment: ${rep:,} · Projection: {yrs} years</p>
+<div class='header'>
+  <h1>Financial Scenario Analysis</h1>
+  <p>{client_name} &nbsp;·&nbsp; {date.today().strftime('%d %B %Y')} &nbsp;·&nbsp; Prepared by {practice_name}</p>
+</div>
+
+<h2>Introduction</h2>
+<p>{"".join(soa_intro)}</p>
+
+<h2>Current Financial Position</h2>
+<div class='metrics'>
+  <div class='metric'><div class='label'>Net Position</div><div class='value'>{fmt(br["net_position"])}</div></div>
+  <div class='metric'><div class='label'>Annual Surplus</div><div class='value'>{fmt(br["surplus"])}</div></div>
+  <div class='metric'><div class='label'>Savings Rate</div><div class='value'>{br["savings_rate"]*100:.1f}%</div></div>
+  <div class='metric'><div class='label'>Emergency Buffer</div><div class='value'>{br["emergency_months"]:.1f} mo</div></div>
+  <div class='metric'><div class='label'>Debt to Assets</div><div class='value'>{br["debt_to_assets"]*100:.0f}%</div></div>
+</div>
+<p><strong>Risk flags:</strong> {risk_html}</p>
+
 <h2>Balance Sheet — Base Case</h2>{html}
-<h2>Scenario Comparison</h2>{html2 if 'html2' in locals() else ''}
+
+<h2>Scenario Comparison</h2>{html2 if 'html2' in locals() else '<p>No scenarios configured.</p>'}
+
 <h2>Projection Milestones</h2>{html3}
+
+<h2>Planning Observations</h2>
+<div class='insight'><ul>{"".join(f"<li>{p}</li>" for p in soa_obs)}</ul></div>
+
+<h2>Conclusion and Recommendations</h2>
+<div class='insight'><ul>{"".join(f"<li>{p}</li>" for p in soa_conc)}</ul></div>
+
 <p class='disc'>{assumptions_block}</p>
 <p class='disc'>{leg_block}</p>
 <p class='disc'>{disclaimer}</p>
