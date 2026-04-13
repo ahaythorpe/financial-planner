@@ -568,7 +568,7 @@ This is why projection lines steepen in later years.
 
 ---
 
-**PRE-RETIREMENT PHASE** *(coming soon)*
+**PRE-RETIREMENT PHASE** *(unlocks at age 50)*
 
 Client is still working but retirement is within 15 years. Readiness check added on top of accumulation.
 
@@ -579,7 +579,7 @@ The 4% is the internationally recognised safe withdrawal rate — indicative onl
 
 ---
 
-**RETIREMENT DRAWDOWN PHASE** *(coming soon)*
+**RETIREMENT DRAWDOWN PHASE** *(unlocks at age 65)*
 
 Client has stopped working. Model flips from accumulation to drawdown.
 
@@ -841,7 +841,7 @@ When built fully this will cover:
 with t_dash:
     st.caption(f"Assumptions: {gr*100:.1f}% growth · {sg*100:.1f}% SG · ${rep:,} repayment · {yrs} yr projection · today's dollars · Age Pension not modelled")
     if older_age >= 67:
-        st.error("This client has reached retirement age (67). Retirement drawdown modelling coming soon.")
+        st.error("This client has reached retirement age (67). See the Life Stage tab for retirement drawdown analysis.")
     elif older_age >= 60:
         st.warning("This client is approaching retirement age. Pre-retirement analysis recommended.")
     elif older_age >= 50:
