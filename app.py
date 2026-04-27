@@ -551,7 +551,7 @@ in the accumulation phase. Switch to New Client to enter your own figures.
 
     with st.expander("The three life phases — accumulation, pre-retirement, retirement"):
         st.markdown("""
-**ACCUMULATION PHASE** *(currently modelled)*
+**ACCUMULATION PHASE** *(example modelled)*
 
 Client is working and building wealth. Each year:
 
