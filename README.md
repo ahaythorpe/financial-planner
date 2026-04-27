@@ -42,6 +42,10 @@ Theme and server defaults live in `.streamlit/config.toml`.
 
 > **Note:** Vercel does not host long-running Streamlit servers. Use Streamlit Cloud, Hugging Face Spaces, Render, or Railway instead.
 
+## How the model works
+
+See [`docs/MODEL.md`](docs/MODEL.md) for a plain-English walkthrough of every calculation — inputs, the 20-year projection loop, retirement readiness, drawdown, risk flags, and what the model does *not* model (tax, inflation, volatility).
+
 ## Project layout
 
 ```
@@ -51,6 +55,7 @@ requirements.txt            # Python dependencies
 runtime.txt                 # Python version pin for Streamlit Cloud
 .streamlit/config.toml      # theme + server settings
 .devcontainer/              # Codespaces / VS Code dev container
+docs/MODEL.md               # plain-English explanation of the calculations
 ```
 
 ## Notes
